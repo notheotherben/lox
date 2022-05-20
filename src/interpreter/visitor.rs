@@ -1,4 +1,4 @@
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::TokenType, errors};
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::Token, errors};
 
 pub struct Interpreter{}
 
@@ -6,89 +6,85 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
     fn visit_binary<'a>(&self, left: crate::ast::Expr<'a>, op: crate::lexer::Token<'a>, right: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
-        match op.token_type() {
-            TokenType::BangEqual => {
+        match op {
+            Token::BangEqual(_) => {
                 Ok(if left != right {
-                    Literal::True
+                    Literal::Bool(true)
                 } else {
-                    Literal::False
+                    Literal::Bool(false)
                 })
             },
-            TokenType::EqualEqual => {
+            Token::EqualEqual(_) => {
                 Ok(if left == right {
-                    Literal::True
+                    Literal::Bool(true)
                 } else {
-                    Literal::False
+                    Literal::Bool(false)
                 })
             },
-            TokenType::Greater => {
+            Token::Greater(_) => {
                 Ok(if left > right {
-                    Literal::True
+                    Literal::Bool(true)
                 } else {
-                    Literal::False
+                    Literal::Bool(false)
                 })
             },
-            TokenType::Less => {
+            Token::Less(_) => {
                 Ok(if left < right {
-                    Literal::True
+                    Literal::Bool(true)
                 } else {
-                    Literal::False
+                    Literal::Bool(false)
                 })
             },
-            TokenType::GreaterEqual => {
+            Token::GreaterEqual(_) => {
                 Ok(if left >= right {
-                    Literal::True
+                    Literal::Bool(true)
                 } else {
-                    Literal::False
+                    Literal::Bool(false)
                 })
             },
-            TokenType::LessEqual => {
+            Token::LessEqual(_) => {
                 Ok(if left <= right {
-                    Literal::True
+                    Literal::Bool(true)
                 } else {
-                    Literal::False
+                    Literal::Bool(false)
                 })
             },
-            TokenType::Plus => {
+            Token::Plus(_) => {
                 match (left, right) {
                     (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left + right)),
                     (Literal::String(left), Literal::String(right)) => Ok(Literal::String(left + &right)),
                     (Literal::String(left), right) => Ok(Literal::String(format!("{}{}", left, right))),
                     (left, Literal::String(right)) => Ok(Literal::String(format!("{}{}", left, right))),
-                    (left, right) => Err(errors::user_with_internal(
-                        &format!("Invalid operands to binary operator `{}`: `{:?}` and `{:?}`", op.lexeme(), left, right),
-                        "Provide either numbers or strings on both the left and right hand sides of the multiplication operator.",
-                        op.location()
+                    (left, right) => Err(errors::user(
+                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
+                        "Provide either numbers or strings on both the left and right hand sides of the multiplication operator."
                     ))
                 }
             },
-            TokenType::Minus => {
+            Token::Minus(_) => {
                 match (left, right) {
                     (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left - right)),
-                    (left, right) => Err(errors::user_with_internal(
-                        &format!("Invalid operands to binary operator `{}`: `{:?}` and `{:?}`", op.lexeme(), left, right),
+                    (left, right) => Err(errors::user(
+                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide numbers on both the left and right hand sides of the subtraction operator.",
-                        op.location()
                     ))
                 }
             },
-            TokenType::Slash => {
+            Token::Slash(_) => {
                 match (left, right) {
                     (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left / right)),
-                    (left, right) => Err(errors::user_with_internal(
-                        &format!("Invalid operands to binary operator `{}`: `{:?}` and `{:?}`", op.lexeme(), left, right),
+                    (left, right) => Err(errors::user(
+                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide numbers on both the left and right hand sides of the division operator.",
-                        op.location()
                     ))
                 }
             },
-            TokenType::Star => {
+            Token::Star(_) => {
                 match (left, right) {
                     (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left * right)),
-                    (left, right) => Err(errors::user_with_internal(
-                        &format!("Invalid operands to binary operator `{}`: `{:?}` and `{:?}`", op.lexeme(), left, right),
+                    (left, right) => Err(errors::user(
+                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide numbers on both the left and right hand sides of the multiplication operator.",
-                        op.location()
                     ))
                 }
             },
@@ -99,23 +95,21 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
     fn visit_unary<'a>(&self, op: crate::lexer::Token<'a>, expr: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
         let right = self.visit_expr(expr)?;
 
-        match op.token_type() {
-            TokenType::Minus => {
+        match op {
+            Token::Minus(_) => {
                 match right {
                     Literal::Number(num) => Ok(Literal::Number(-num)),
-                    _ => Err(errors::user_with_internal(
-                        &format!("Invalid operand to unary operator `{}`: `{:?}`", op.lexeme(), right),
-                        "Provide a number to the unary negation operator, or remove the minus sign.",
-                        op.location()
+                    _ => Err(errors::user(
+                        &format!("Invalid operand to unary operator {}: `{:?}`", op, right),
+                        "Provide a number to the unary negation operator, or remove the minus sign."
                     ))
                 }
             },
-            TokenType::Bang => {
+            Token::Bang(_) => {
                 match right {
-                    Literal::False => Ok(Literal::True),
-                    Literal::True => Ok(Literal::False),
-                    Literal::Nil => Ok(Literal::True),
-                    _ => Ok(Literal::False)
+                    Literal::Bool(b) => Ok(Literal::Bool(!b)),
+                    Literal::Nil => Ok(Literal::Bool(true)),
+                    _ => Ok(Literal::Bool(false))
                 }
             },
             _ => panic!("We received an unexpected unary operator: {:?}", op)
@@ -126,7 +120,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
         self.visit_expr(expr)
     }
 
-    fn visit_literal(&self, _lit: crate::lexer::Token<'_>, value: Literal) -> Result<Literal, LoxError> {
+    fn visit_literal(&self, value: Literal) -> Result<Literal, LoxError> {
         Ok(value)
     }
 }

@@ -11,11 +11,10 @@ impl ExprVisitor<String> for AstPrinter {
         format!("(group {})", self.visit_expr(expr))
     }
 
-    fn visit_literal(&self, _lit: crate::lexer::Token<'_>, value: Literal) -> String {
+    fn visit_literal(&self, value: Literal) -> String {
         match value {
             Literal::Nil => "nil".to_string(),
-            Literal::False => "false".to_string(),
-            Literal::True => "true".to_string(),
+            Literal::Bool(b) => b.to_string(),
             Literal::Number(num) => format!("{}", num),
             Literal::String(string) => format!("\"{}\"", string)
         }
@@ -28,16 +27,17 @@ impl ExprVisitor<String> for AstPrinter {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::{Token, TokenType};
+    use crate::{lexer::Token, core::Location};
 
     use super::*;
 
     #[test]
     fn test_ast_printer() {
+        let loc = Location::default();
         let expr = Expr::Binary(
-            Box::new(Expr::Unary(Token::new(TokenType::Minus, "-", 0, 0), Box::new(Expr::Literal(Token::new(TokenType::Number, "123", 1, 1), Literal::Number(123.))))),
-            Token::new(TokenType::Star, "*", 0, 0),
-            Box::new(Expr::Grouping(Box::new(Expr::Literal(Token::new(TokenType::Number, "45.67", 1, 1), Literal::Number(45.67))))),
+            Box::new(Expr::Unary(Token::Minus(loc), Box::new(Expr::Literal(Literal::Number(123.))))),
+            Token::Star(loc),
+            Box::new(Expr::Grouping(Box::new(Expr::Literal(Literal::Number(45.67))))),
         );
 
         let printer = AstPrinter{};

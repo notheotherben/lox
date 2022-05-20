@@ -1,6 +1,6 @@
-use crate::{LoxError, errors};
+use crate::{LoxError, errors, core::Location};
 
-use super::{TokenType, Token};
+use super::Token;
 
 #[derive(Debug)]
 pub struct Scanner<'a> {
@@ -27,16 +27,16 @@ impl<'a> Scanner<'a> {
         self.has_err
     }
 
-    fn location(&self, loc: usize) -> (usize, usize) {
+    fn location(&self, loc: usize) -> Location {
         let line = self.line;
         let column = loc - self.last_newline;
-        (line, column)
+        Location::new(line, column)
     }
 
-    fn err<F: FnOnce(usize, usize) -> LoxError>(&mut self, location: usize, f: F) -> LoxError {
+    fn err<F: FnOnce(Location) -> LoxError>(&mut self, location: usize, f: F) -> LoxError {
         self.has_err = true;
-        let (line, column) = self.location(location);
-        f(line, column)
+        let location = self.location(location);
+        f(location)
     }
 
     fn match_char(&mut self, next: char) -> bool {
@@ -71,7 +71,7 @@ impl<'a> Scanner<'a> {
 
     fn read_token(&mut self) -> Option<Result<Token<'a>, LoxError>> {
         while let Some((loc, char)) = self.chars.next() {
-            let (line, column) = self.location(loc);
+            let location = self.location(loc);
 
             match char {
                 ' ' => continue,
@@ -81,25 +81,25 @@ impl<'a> Scanner<'a> {
                     self.line += 1;
                     self.last_newline = loc;
                 },
-                '(' => return Some(Ok(Token::new(TokenType::LeftParen, "(", line, column))),
-                ')' => return Some(Ok(Token::new(TokenType::RightParen, ")", line, column))),
-                '{' => return Some(Ok(Token::new(TokenType::LeftBrace, "{", line, column))),
-                '}' => return Some(Ok(Token::new(TokenType::RightBrace, "}", line, column))),
-                ',' => return Some(Ok(Token::new(TokenType::Comma, ",", line, column))),
-                '.' => return Some(Ok(Token::new(TokenType::Dot, ".", line, column))),
-                '-' => return Some(Ok(Token::new(TokenType::Minus, "-", line, column))),
-                '+' => return Some(Ok(Token::new(TokenType::Plus, "+", line, column))),
-                ';' => return Some(Ok(Token::new(TokenType::Semicolon, ";", line, column))),
-                '*' => return Some(Ok(Token::new(TokenType::Star, "*", line, column))),
+                '(' => return Some(Ok(Token::LeftParen(location))),
+                ')' => return Some(Ok(Token::RightParen(location))),
+                '{' => return Some(Ok(Token::LeftBrace(location))),
+                '}' => return Some(Ok(Token::RightBrace(location))),
+                ',' => return Some(Ok(Token::Comma(location))),
+                '.' => return Some(Ok(Token::Dot(location))),
+                '-' => return Some(Ok(Token::Minus(location))),
+                '+' => return Some(Ok(Token::Plus(location))),
+                ';' => return Some(Ok(Token::Semicolon(location))),
+                '*' => return Some(Ok(Token::Star(location))),
 
-                '!' if self.match_char('=') => return Some(Ok(Token::new(TokenType::BangEqual, "!=", line, column))),
-                '!' => return Some(Ok(Token::new(TokenType::Bang, "!", line, column))),
-                '=' if self.match_char('=') => return Some(Ok(Token::new(TokenType::EqualEqual, "==", line, column))),
-                '=' => return Some(Ok(Token::new(TokenType::Equal, "=", line, column))),
-                '>' if self.match_char('=') => return Some(Ok(Token::new(TokenType::GreaterEqual, ">=", line, column))),
-                '>' => return Some(Ok(Token::new(TokenType::Greater, ">", line, column))),
-                '<' if self.match_char('=') => return Some(Ok(Token::new(TokenType::LessEqual, "<=", line, column))),
-                '<' => return Some(Ok(Token::new(TokenType::Less, "<", line, column))),
+                '!' if self.match_char('=') => return Some(Ok(Token::BangEqual(location))),
+                '!' => return Some(Ok(Token::Bang(location))),
+                '=' if self.match_char('=') => return Some(Ok(Token::EqualEqual(location))),
+                '=' => return Some(Ok(Token::Equal(location))),
+                '>' if self.match_char('=') => return Some(Ok(Token::GreaterEqual(location))),
+                '>' => return Some(Ok(Token::Greater(location))),
+                '<' if self.match_char('=') => return Some(Ok(Token::LessEqual(location))),
+                '<' => return Some(Ok(Token::Less(location))),
 
                 '/' if self.match_char('/') => {
                     while let Some((_, c)) = self.chars.peek() {
@@ -134,17 +134,17 @@ impl<'a> Scanner<'a> {
                         }
                     }
                 },
-                '/' => return Some(Ok(Token::new(TokenType::Slash, "/", line, column))),
+                '/' => return Some(Ok(Token::Slash(location))),
 
                 '"' => return Some(self.read_string(loc)),
 
                 c if c.is_numeric() => return Some(self.read_number(loc)),
                 c if c.is_alphabetic() || c == '_' => return Some(self.read_identifier(loc)),
 
-                c => return Some(Err(self.err(loc, |line, col| errors::user_with_internal(
+                c => return Some(Err(self.err(loc, |location| errors::user_with_internal(
                     &format!("We found an unexpected character '{}' where we were expecting one of: [whitespace, parenthesis, brace, operator, identifier, number, string, comment]", c),
                     "Make sure you have entered valid Lox code and have not accidentally closed a string.",
-                    errors::source_location(self.source[loc - 5..loc+2].to_string(), line, col),
+                    errors::source_location(self.source[loc - 5..loc+2].to_string(), location.line(), location.col()),
                 ))))
             }
         }
@@ -153,7 +153,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn read_string(&mut self, start: usize) -> Result<Token<'a>, LoxError> {
-        let (line, column) = self.location(start);
+        let location = self.location(start);
         
         while let Some((loc, c)) = self.chars.next() {
             match c {
@@ -162,21 +162,21 @@ impl<'a> Scanner<'a> {
                     self.last_newline = loc;
                 },
                 '"' => {
-                    return Ok(Token::new(TokenType::String, &self.source[start..loc+1], line, column));
+                    return Ok(Token::String(location, &self.source[start..loc+1]));
                 },
                 _ => {}
             }
         }
 
-        Err(self.err(start, |line, col| errors::user_with_internal(
+        Err(self.err(start, |location| errors::user_with_internal(
             "Reached the end of the file without finding the closing quote for a string.",
             "Make sure that you have terminated your string with a '\"' character.",
-            errors::source_location(self.source[start..start+10].to_string(), line, col),
+            errors::source_location(self.source[start..start+10].to_string(), location.line(), location.col()),
         )))
     }
 
     fn read_number(&mut self, start: usize) -> Result<Token<'a>, LoxError> {
-        let (line, column) = self.location(start);
+        let location = self.location(start);
 
         let mut end = start+self.advance_while_fn(|_, c| c.is_numeric());
         if let Some((loc, c)) = self.chars.peek() {
@@ -186,33 +186,33 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        return Ok(Token::new(TokenType::Number, &self.source[start..end+1], line, column));
+        return Ok(Token::Number(location, &self.source[start..end+1]));
     }
 
     fn read_identifier(&mut self, start: usize) -> Result<Token<'a>, LoxError> {
-        let (line, column) = self.location(start);
+        let location = self.location(start);
 
         let end = start + self.advance_while_fn(|_, c| c.is_alphanumeric() || c == '_');
         let lexeme = &self.source[start..end+1];
 
         match lexeme {
-            "and" => Ok(Token::new(TokenType::And, lexeme, line, column)),
-            "class" => Ok(Token::new(TokenType::Class, lexeme, line, column)),
-            "else" => Ok(Token::new(TokenType::Else, lexeme, line, column)),
-            "false" => Ok(Token::new(TokenType::False, lexeme, line, column)),
-            "for" => Ok(Token::new(TokenType::For, lexeme, line, column)),
-            "fun" => Ok(Token::new(TokenType::Fun, lexeme, line, column)),
-            "if" => Ok(Token::new(TokenType::If, lexeme, line, column)),
-            "nil" => Ok(Token::new(TokenType::Nil, lexeme, line, column)),
-            "or" => Ok(Token::new(TokenType::Or, lexeme, line, column)),
-            "print" => Ok(Token::new(TokenType::Print, lexeme, line, column)),
-            "return" => Ok(Token::new(TokenType::Return, lexeme, line, column)),
-            "super" => Ok(Token::new(TokenType::Super, lexeme, line, column)),
-            "this" => Ok(Token::new(TokenType::This, lexeme, line, column)),
-            "true" => Ok(Token::new(TokenType::True, lexeme, line, column)),
-            "var" => Ok(Token::new(TokenType::Var, lexeme, line, column)),
-            "while" => Ok(Token::new(TokenType::While, lexeme, line, column)),
-            lexeme => Ok(Token::new(TokenType::Identifier, lexeme, line, column)),
+            "and" => Ok(Token::And(location)),
+            "class" => Ok(Token::Class(location)),
+            "else" => Ok(Token::Else(location)),
+            "false" => Ok(Token::False(location)),
+            "for" => Ok(Token::For(location)),
+            "fun" => Ok(Token::Fun(location)),
+            "if" => Ok(Token::If(location)),
+            "nil" => Ok(Token::Nil(location)),
+            "or" => Ok(Token::Or(location)),
+            "print" => Ok(Token::Print(location)),
+            "return" => Ok(Token::Return(location)),
+            "super" => Ok(Token::Super(location)),
+            "this" => Ok(Token::This(location)),
+            "true" => Ok(Token::True(location)),
+            "var" => Ok(Token::Var(location)),
+            "while" => Ok(Token::While(location)),
+            lexeme => Ok(Token::Identifier(location, lexeme)),
         }
     }
 }
@@ -233,10 +233,10 @@ mod tests {
     fn test_basic_operators() {
         let mut lexer = Scanner::new("+ - * /");
 
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::new(TokenType::Plus, "+", 1, 0));
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::new(TokenType::Minus, "-", 1, 2));
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::new(TokenType::Star, "*", 1, 4));
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::new(TokenType::Slash, "/", 1, 6));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Plus(Location::new(1, 0)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Minus(Location::new(1, 2)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Star(Location::new(1, 4)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Slash(Location::new(1, 6)));
         assert!(lexer.next().is_none(), "no more tokens");
     }
 
@@ -249,12 +249,12 @@ mod tests {
 "#);
         
         let tokens = [
-            TokenType::LeftParen, TokenType::LeftParen, TokenType::RightParen, TokenType::RightParen, TokenType::LeftBrace, TokenType::RightBrace,
-            TokenType::Bang, TokenType::Star, TokenType::Plus, TokenType::Minus, TokenType::Slash, TokenType::Equal, TokenType::Less, TokenType::Greater, TokenType::LessEqual, TokenType::EqualEqual
+            "(", "(", ")", ")", "{", "}",
+            "!", "*", "+", "-", "/", "=", "<", ">", "<=", "==",
         ];
 
         for token in tokens {
-            assert_eq!(lexer.next().expect("a token").expect("without an error").token_type(), token);
+            assert_eq!(lexer.next().expect("a token").expect("without an error").lexeme(), token);
         }
 
         assert!(lexer.next().is_none(), "no more tokens");
@@ -279,9 +279,11 @@ mod tests {
     fn test_strings() {
         let mut lexer = Scanner::new(r#" "test" "#);
 
-        let token = lexer.next().expect("a token").expect("without an error");
-        assert_eq!(token.token_type(), TokenType::String);
-        assert_eq!(token.lexeme(), "\"test\"");
+        if let Token::String(_, lexeme) = lexer.next().expect("a token").expect("without an error") {
+            assert_eq!(lexeme, "\"test\"");
+        } else {
+            panic!("expected a string token");
+        }
 
         assert!(lexer.next().is_none(), "no more tokens");
     }
@@ -292,12 +294,16 @@ mod tests {
 
         let numbers = ["123", "12.34", "12"];
         for number in numbers {
-            let token = lexer.next().expect("a token").expect("without an error");
-            assert_eq!(token.token_type(), TokenType::Number);
-            assert_eq!(token.lexeme(), number);
+            if let Token::Number(_, lexeme) = lexer.next().expect("a token").expect("without an error") {
+                assert_eq!(lexeme, number);
+            } else {
+                panic!("expected a number token");
+            }
         }
 
-        assert_eq!(lexer.next().expect("a token").expect("without an error").token_type(), TokenType::Dot);
+        if let Token::Dot(_) = lexer.next().expect("a token").expect("without an error") {} else {
+            panic!("expected a dot token");
+        }
 
         assert!(lexer.next().is_none(), "no more tokens");
     }
@@ -311,15 +317,17 @@ and class else false for fun if nil or print return super this true var while
 
         let identifiers = ["identifier", "_id", "a_b_c"];
         for identifier in identifiers {
-            let token = lexer.next().expect("a token").expect("without an error");
-            assert_eq!(token.token_type(), TokenType::Identifier);
-            assert_eq!(token.lexeme(), identifier);
+            if let Token::Identifier(_, lexeme) = lexer.next().expect("a token").expect("without an error") {
+                assert_eq!(lexeme, identifier);
+            } else {
+                panic!("expected an identifier token");
+            }
         }
 
-        let keywords = [TokenType::And, TokenType::Class, TokenType::Else, TokenType::False, TokenType::For, TokenType::Fun, TokenType::If, TokenType::Nil, TokenType::Or, TokenType::Print, TokenType::Return, TokenType::Super, TokenType::This, TokenType::True, TokenType::Var, TokenType::While];
+        let keywords = ["and", "class", "else", "false", "for", "fun", "if", "nil", "or", "print", "return", "super", "this", "true", "var", "while"];
         for keyword in keywords {
             let token = lexer.next().expect("a token").expect("without an error");
-            assert_eq!(token.token_type(), keyword);
+            assert_eq!(token.lexeme(), keyword);
         }
     }
 }

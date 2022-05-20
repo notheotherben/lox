@@ -1,101 +1,160 @@
-use crate::errors::{SourceLocation, source_location};
+use std::fmt::Display;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token<'a> {
-    ty: TokenType,
-    lexeme: &'a str,
-    line: usize,
-    column: usize,
-}
+use crate::core::Location;
 
-impl<'a> std::error::Error for Token<'a> {}
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Token<'a> {
+    LeftParen(Location),
+    RightParen(Location),
+    LeftBrace(Location),
+    RightBrace(Location),
+    Comma(Location),
+    Dot(Location),
+    Minus(Location),
+    Plus(Location),
+    Semicolon(Location),
+    Slash(Location),
+    Star(Location),
 
-impl<'a> std::fmt::Display for Token<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?} at '{}' (line {}, column {})", self.ty, self.lexeme, self.line, self.column)
-    }
+    Bang(Location),
+    BangEqual(Location),
+    Equal(Location),
+    EqualEqual(Location),
+    Greater(Location),
+    GreaterEqual(Location),
+    Less(Location),
+    LessEqual(Location),
+
+    Identifier(Location, &'a str),
+    String(Location, &'a str),
+    Number(Location, &'a str),
+
+    And(Location),
+    Class(Location),
+    Else(Location),
+    False(Location),
+    Fun(Location),
+    For(Location),
+    If(Location),
+    Nil(Location),
+    Or(Location),
+    Print(Location),
+    Return(Location),
+    Super(Location),
+    This(Location),
+    True(Location),
+    Var(Location),
+    While(Location),
 }
 
 impl<'a> Token<'a> {
-    pub fn new(ty: TokenType, lexeme: &'a str, line: usize, column: usize) -> Self {
-        Self {
-            ty,
-            lexeme,
-            line,
-            column,
+    pub fn location(&self) -> Location {
+        match self {
+            Token::LeftParen(loc) => *loc,
+            Token::RightParen(loc) => *loc,
+            Token::LeftBrace(loc) => *loc,
+            Token::RightBrace(loc) => *loc,
+            Token::Comma(loc) => *loc,
+            Token::Dot(loc) => *loc,
+            Token::Minus(loc) => *loc,
+            Token::Plus(loc) => *loc,
+            Token::Semicolon(loc) => *loc,
+            Token::Slash(loc) => *loc,
+            Token::Star(loc) => *loc,
+
+            Token::Bang(loc) => *loc,
+            Token::BangEqual(loc) => *loc,
+            Token::Equal(loc) => *loc,
+            Token::EqualEqual(loc) => *loc,
+            Token::Greater(loc) => *loc,
+            Token::GreaterEqual(loc) => *loc,
+            Token::Less(loc) => *loc,
+            Token::LessEqual(loc) => *loc,
+
+            Token::Identifier(loc, _) => *loc,
+            Token::String(loc, _) => *loc,
+            Token::Number(loc, _) => *loc,
+
+            Token::And(loc) => *loc,
+            Token::Class(loc) => *loc,
+            Token::Else(loc) => *loc,
+            Token::False(loc) => *loc,
+            Token::Fun(loc) => *loc,
+            Token::For(loc) => *loc,
+            Token::If(loc) => *loc,
+            Token::Nil(loc) => *loc,
+            Token::Or(loc) => *loc,
+            Token::Print(loc) => *loc,
+            Token::Return(loc) => *loc,
+            Token::Super(loc) => *loc,
+            Token::This(loc) => *loc,
+            Token::True(loc) => *loc,
+            Token::Var(loc) => *loc,
+            Token::While(loc) => *loc,
         }
     }
 
-    pub fn is(&self, ty: TokenType) -> bool {
-        self.ty == ty
-    }
-
-    pub fn is_one_of(&self, ty: &[TokenType]) -> bool {
-        ty.contains(&self.ty)
-    }
-
-    pub fn token_type(&self) -> TokenType {
-        self.ty
-    }
-
     pub fn lexeme(&self) -> &'a str {
-        self.lexeme
-    }
+        match self {
+            Token::LeftParen(..) => "(",
+            Token::RightParen(..) => ")",
+            Token::LeftBrace(..) => "{",
+            Token::RightBrace(..) => "}",
+            Token::Comma(..) => ",",
+            Token::Dot(..) => ".",
+            Token::Minus(..) => "-",
+            Token::Plus(..) => "+",
+            Token::Semicolon(..) => ";",
+            Token::Slash(..) => "/",
+            Token::Star(..) => "*",
 
-    pub fn line(&self) -> usize {
-        self.line
-    }
+            Token::Bang(..) => "!",
+            Token::BangEqual(..) => "!=",
+            Token::Equal(..) => "=",
+            Token::EqualEqual(..) => "==",
+            Token::Greater(..) => ">",
+            Token::GreaterEqual(..) => ">=",
+            Token::Less(..) => "<",
+            Token::LessEqual(..) => "<=",
 
-    pub fn column(&self) -> usize {
-        self.column
-    }
+            Token::Identifier(_, l) => l,
+            Token::String(_, l) => l,
+            Token::Number(_, l) => l,
 
-    pub fn location(&self) -> SourceLocation {
-        source_location(self.lexeme().to_string(), self.line, self.column)
+            Token::And(..) => "and",
+            Token::Class(..) => "class",
+            Token::Else(..) => "else",
+            Token::False(..) => "false",
+            Token::Fun(..) => "fun",
+            Token::For(..) => "for",
+            Token::If(..) => "if",
+            Token::Nil(..) => "nil",
+            Token::Or(..) => "or",
+            Token::Print(..) => "print",
+            Token::Return(..) => "return",
+            Token::Super(..) => "super",
+            Token::This(..) => "this",
+            Token::True(..) => "true",
+            Token::Var(..) => "var",
+            Token::While(..) => "while",
+        }
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TokenType {
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    Semicolon,
-    Slash,
-    Star,
+impl Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}' at {}", self.lexeme(), self.location())
+    }
+}
 
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
+#[cfg(test)]
+mod tests {
+    use crate::core::Location;
 
-    Identifier,
-    String,
-    Number,
+    use super::Token;
 
-    And,
-    Class,
-    Else,
-    False,
-    Fun,
-    For,
-    If,
-    Nil,
-    Or,
-    Print,
-    Return,
-    Super,
-    This,
-    True,
-    Var,
-    While,
+    #[test]
+    fn test_display() {
+        assert_eq!(format!("{}", Token::If(Location::new(1, 1))), "'if' at line 1, column 1");
+    }
 }

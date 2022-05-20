@@ -6,7 +6,7 @@ use super::Literal;
 pub enum Expr<'a> {
     Binary(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
     Grouping(Box<Expr<'a>>),
-    Literal(Token<'a>, Literal),
+    Literal(Literal),
     Unary(Token<'a>, Box<Expr<'a>>)
 }
 
@@ -19,8 +19,8 @@ pub trait ExprVisitor<T> {
             Expr::Grouping(expr) => {
                 self.visit_grouping(*expr)
             },
-            Expr::Literal(lit, value) => {
-                self.visit_literal(lit, value)
+            Expr::Literal(value) => {
+                self.visit_literal(value)
             },
             Expr::Unary(op, expr) => {
                 self.visit_unary(op, *expr)
@@ -32,7 +32,7 @@ pub trait ExprVisitor<T> {
 
     fn visit_grouping(&self, expr: Expr<'_>) -> T;
 
-    fn visit_literal(&self, lit: Token<'_>, value: Literal) -> T;
+    fn visit_literal(&self, value: Literal) -> T;
 
     fn visit_unary<'a>(&self, op: Token<'a>, expr: Expr<'a>) -> T;
 }

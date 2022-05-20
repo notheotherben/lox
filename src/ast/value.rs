@@ -3,8 +3,7 @@ use std::{cmp::Ordering, fmt::Display};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Nil,
-    False,
-    True,
+    Bool(bool),
     Number(f64),
     String(String)
 }
@@ -23,8 +22,7 @@ impl Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Literal::Nil => write!(f, "nil"),
-            Literal::False => write!(f, "false"),
-            Literal::True => write!(f, "true"),
+            Literal::Bool(b) => write!(f, "{}", b),
             Literal::Number(n) => write!(f, "{}", n),
             Literal::String(s) => write!(f, "{}", s)
         }
