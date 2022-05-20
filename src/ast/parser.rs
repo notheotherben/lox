@@ -109,7 +109,29 @@ impl Parser {
     fn expression<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
     ) -> Result<Expr<'a>, LoxError> {
-        Self::equality(tokens)
+        Self::assignment(tokens)
+    }
+
+    fn assignment<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Expr<'a>, LoxError> {
+        let expr = Self::equality(tokens)?;
+
+        match tokens.peek() {
+            Some(Token::Equal(_)) => {},
+            _ => return Ok(expr),
+        };
+
+        let equals = tokens.next().unwrap();
+        let value = Self::assignment(tokens)?;
+
+        match expr {
+            Expr::Var(name) => Ok(Expr::Assign(name, Box::new(value))),
+            _ => Err(errors::user(
+                &format!("Expected a variable identifier to be assigned to, but got {:?} instead at {}.", expr, equals),
+                "Make sure that you provide the name of a variable to assign to."
+            )),
+        }
     }
 
     fn equality<'a, T: Iterator<Item = Token<'a>>>(

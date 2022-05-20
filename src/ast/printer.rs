@@ -3,15 +3,15 @@ use super::{Expr, ExprVisitor, Literal};
 pub struct AstPrinter{}
 
 impl ExprVisitor<String> for AstPrinter {
-    fn visit_binary<'a>(&self, left: Expr<'a>, op: crate::lexer::Token<'a>, right: Expr<'a>) -> String {
+    fn visit_binary<'a>(&mut self, left: Expr<'a>, op: crate::lexer::Token<'a>, right: Expr<'a>) -> String {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
-    fn visit_grouping(&self, expr: Expr<'_>) -> String {
+    fn visit_grouping(&mut self, expr: Expr<'_>) -> String {
         format!("(group {})", self.visit_expr(expr))
     }
 
-    fn visit_literal(&self, value: Literal) -> String {
+    fn visit_literal(&mut self, value: Literal) -> String {
         match value {
             Literal::Nil => "nil".to_string(),
             Literal::Bool(b) => b.to_string(),
@@ -20,14 +20,17 @@ impl ExprVisitor<String> for AstPrinter {
         }
     }
 
-    fn visit_unary<'a>(&self, op: crate::lexer::Token<'a>, expr: Expr<'a>) -> String {
+    fn visit_unary<'a>(&mut self, op: crate::lexer::Token<'a>, expr: Expr<'a>) -> String {
         format!("({} {})", op.lexeme(), self.visit_expr(expr))
     }
 
-    fn visit_var_ref(&self, name: crate::lexer::Token<'_>) -> String {
+    fn visit_var_ref(&mut self, name: crate::lexer::Token<'_>) -> String {
         name.lexeme().to_string()
     }
-    
+
+    fn visit_assign(&mut self, ident: crate::lexer::Token<'_>, value: Expr<'_>) -> String {
+        format!("(= {} {})", ident.lexeme(), self.visit_expr(value))
+    }    
 }
 
 #[cfg(test)]
@@ -45,7 +48,7 @@ mod tests {
             Box::new(Expr::Grouping(Box::new(Expr::Literal(Literal::Number(45.67))))),
         );
 
-        let printer = AstPrinter{};
+        let mut printer = AstPrinter{};
         let result = printer.visit_expr(expr);
         assert_eq!(result, "(* (- 123) (group 45.67))");
     }

@@ -18,9 +18,9 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
         }
     }
 
-    fn visit_print(&self, expr: Expr<'_>) -> T;
+    fn visit_print(&mut self, expr: Expr<'_>) -> T;
 
-    fn visit_stmt_expr(&self, expr: Expr<'_>) -> T;
+    fn visit_stmt_expr(&mut self, expr: Expr<'_>) -> T;
 
     fn visit_var_def(&mut self, name: Token<'_>, expr: Expr<'_>) -> T;
 }

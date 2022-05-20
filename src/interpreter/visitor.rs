@@ -8,7 +8,7 @@ pub struct Interpreter{
 }
 
 impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
-    fn visit_binary<'a>(&self, left: crate::ast::Expr<'a>, op: crate::lexer::Token<'a>, right: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
+    fn visit_binary<'a>(&mut self, left: crate::ast::Expr<'a>, op: crate::lexer::Token<'a>, right: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
         match op {
@@ -97,7 +97,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_unary<'a>(&self, op: crate::lexer::Token<'a>, expr: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
+    fn visit_unary<'a>(&mut self, op: crate::lexer::Token<'a>, expr: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
         let right = self.visit_expr(expr)?;
 
         match op {
@@ -121,15 +121,15 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_grouping(&self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_grouping(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
         self.visit_expr(expr)
     }
 
-    fn visit_literal(&self, value: Literal) -> Result<Literal, LoxError> {
+    fn visit_literal(&mut self, value: Literal) -> Result<Literal, LoxError> {
         Ok(value)
     }
 
-    fn visit_var_ref(&self, name: Token<'_>) -> Result<Literal, LoxError> {
+    fn visit_var_ref(&mut self, name: Token<'_>) -> Result<Literal, LoxError> {
         match self.env.get(name.lexeme()) {
             Some(value) => Ok(value.clone()),
             None => Err(errors::user(
@@ -138,23 +138,32 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
             ))
         }
     }
+
+    fn visit_assign(&mut self, ident: Token<'_>, value: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+        let value = self.visit_expr(value)?;
+        self.env.define(ident.lexeme(), value.clone());
+        Ok(value)
+    }
+
+    
 }
 
 impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
-    fn visit_print(&self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_print(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
         let value = self.visit_expr(expr)?;
         println!("{}", value);
         Ok(Literal::Nil)
     }
 
-    fn visit_stmt_expr(&self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_stmt_expr(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
         self.visit_expr(expr)?;
 
         Ok(Literal::Nil)
     }
 
     fn visit_var_def(&mut self, name: Token<'_>, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
-        self.env.define(name.lexeme(), self.visit_expr(expr)?);
+        let value = self.visit_expr(expr)?;
+        self.env.define(name.lexeme(), value);
         Ok(Literal::Nil)
     }
 
@@ -172,7 +181,7 @@ mod tests {
         let lexer = Scanner::new("10 - 12 / (2 * 3)");
         let tree = Parser::parse_expr(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
 
-        let interpreter = Interpreter::default();
+        let mut interpreter = Interpreter::default();
         let result = interpreter.visit_expr(tree).expect("no errors");
         assert_eq!(result, Literal::Number(8.0));
     }
