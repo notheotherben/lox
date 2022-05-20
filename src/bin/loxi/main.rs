@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use lox::{errors, LoxError, ast::ExprVisitor};
+use lox::{errors, LoxError};
 
 fn main() {
     let result = match std::env::args().nth(1) {
