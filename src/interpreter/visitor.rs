@@ -1,6 +1,11 @@
 use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::Token, errors};
 
-pub struct Interpreter{}
+use super::env::Environment;
+
+#[derive(Default, Debug, Clone)]
+pub struct Interpreter{
+    env: Environment,
+}
 
 impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
     fn visit_binary<'a>(&self, left: crate::ast::Expr<'a>, op: crate::lexer::Token<'a>, right: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
@@ -123,6 +128,16 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
     fn visit_literal(&self, value: Literal) -> Result<Literal, LoxError> {
         Ok(value)
     }
+
+    fn visit_var_ref(&self, name: Token<'_>) -> Result<Literal, LoxError> {
+        match self.env.get(name.lexeme()) {
+            Some(value) => Ok(value.clone()),
+            None => Err(errors::user(
+                &format!("Variable `{}` is not defined.", name.lexeme()),
+                "Define the variable before you attempt to reference it."
+            ))
+        }
+    }
 }
 
 impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
@@ -137,6 +152,13 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
 
         Ok(Literal::Nil)
     }
+
+    fn visit_var_def(&mut self, name: Token<'_>, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+        self.env.define(name.lexeme(), self.visit_expr(expr)?);
+        Ok(Literal::Nil)
+    }
+
+    
 }
 
 #[cfg(test)]
@@ -150,7 +172,7 @@ mod tests {
         let lexer = Scanner::new("10 - 12 / (2 * 3)");
         let tree = Parser::parse_expr(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
 
-        let interpreter = Interpreter{};
+        let interpreter = Interpreter::default();
         let result = interpreter.visit_expr(tree).expect("no errors");
         assert_eq!(result, Literal::Number(8.0));
     }

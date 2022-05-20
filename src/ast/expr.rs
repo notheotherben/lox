@@ -7,7 +7,8 @@ pub enum Expr<'a> {
     Binary(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
     Grouping(Box<Expr<'a>>),
     Literal(Literal),
-    Unary(Token<'a>, Box<Expr<'a>>)
+    Unary(Token<'a>, Box<Expr<'a>>),
+    Var(Token<'a>),
 }
 
 pub trait ExprVisitor<T> {
@@ -24,7 +25,10 @@ pub trait ExprVisitor<T> {
             },
             Expr::Unary(op, expr) => {
                 self.visit_unary(op, *expr)
-            }
+            },
+            Expr::Var(name) => {
+                self.visit_var_ref(name)
+            },
         }
     }
 
@@ -35,4 +39,6 @@ pub trait ExprVisitor<T> {
     fn visit_literal(&self, value: Literal) -> T;
 
     fn visit_unary<'a>(&self, op: Token<'a>, expr: Expr<'a>) -> T;
+
+    fn visit_var_ref(&self, name: Token<'_>) -> T;
 }

@@ -13,8 +13,14 @@ impl Parser {
         let mut tokens = tokens.peekable();
         let mut stmts = Vec::new();
         while tokens.peek().is_some() {
-            let stmt = Self::statement(&mut tokens)?;
-            stmts.push(stmt);
+            match Self::declaration(&mut tokens) {
+                Ok(stmt) => stmts.push(stmt),
+                Err(err) => {
+                    Self::synchronize(&mut tokens);
+                    // TODO: This should be reported as its own iterable
+                    return Err(err)
+                },
+            }
         }
 
         Ok(stmts)
@@ -25,6 +31,48 @@ impl Parser {
     ) -> Result<Expr<'a>, LoxError> {
         let mut tokens = tokens.peekable();
         Self::expression(&mut tokens)
+    }
+
+
+    fn declaration<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Stmt<'a>, LoxError> {
+        match tokens.peek() {
+            Some(Token::Var(_)) => {},
+            _ => return Self::statement(tokens),
+        };
+
+        let var = tokens.next().unwrap();
+        match tokens.next() {
+            Some(ident @ Token::Identifier(..)) => {
+                let init = if let Some(Token::Equal(_)) = tokens.peek() {
+                    tokens.next();
+                    Self::expression(tokens)?
+                } else {
+                    Expr::Literal(Literal::Nil)
+                };
+
+                match tokens.next() {
+                    Some(Token::Semicolon(_)) => Ok(Stmt::Var(ident, init)),
+                    Some(tok) => Err(errors::user(
+                        &format!("Expected `;` after variable declaration {}, found `{}`", var, tok),
+                        "Make sure that you have a semicolon after the variable declaration."
+                    )),
+                    None => Err(errors::user(
+                        &format!("Expected `;` after variable declaration {}, found end of input.", var),
+                        "Make sure that you have a semicolon after the variable declaration."
+                    )),
+                }
+            },
+            Some(other) => Err(errors::user(
+                &format!("Expected an identifier to be provided after {}, but got {} instead.", var, other),
+                "Provide a variable name after the `var` keyword."
+            )),
+            None => Err(errors::user(
+                &format!("Expected an identifier to be provided after {}, but we found the end of the file instead.", var),
+                "Provide a variable name after the `var` keyword."
+            )),
+        }
     }
 
     fn statement<'a, T: Iterator<Item = Token<'a>>>(
@@ -195,6 +243,9 @@ impl Parser {
                             "Make sure you have provided a closing parenthesis at the end of your expression."))
                     }
                 }
+            },
+            Some(var @ Token::Identifier(..)) => {
+                Ok(Expr::Var(var))
             },
             Some(t) => {
                 Self::synchronize(tokens);

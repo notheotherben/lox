@@ -23,6 +23,11 @@ impl ExprVisitor<String> for AstPrinter {
     fn visit_unary<'a>(&self, op: crate::lexer::Token<'a>, expr: Expr<'a>) -> String {
         format!("({} {})", op.lexeme(), self.visit_expr(expr))
     }
+
+    fn visit_var_ref(&self, name: crate::lexer::Token<'_>) -> String {
+        name.lexeme().to_string()
+    }
+    
 }
 
 #[cfg(test)]
