@@ -9,21 +9,22 @@ pub struct Parser;
 impl Parser {
     pub fn parse<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut T,
-    ) -> Result<Vec<Stmt<'a>>, LoxError> {
+    ) -> (Vec<Stmt<'a>>, Vec<LoxError>) {
         let mut tokens = tokens.peekable();
         let mut stmts = Vec::new();
+        let mut errs = Vec::new();
+
         while tokens.peek().is_some() {
             match Self::declaration(&mut tokens) {
                 Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
                     Self::synchronize(&mut tokens);
-                    // TODO: This should be reported as its own iterable
-                    return Err(err)
+                    errs.push(err);
                 },
             }
         }
 
-        Ok(stmts)
+        (stmts, errs)
     }
 
     pub fn parse_expr<'a, T: Iterator<Item = Token<'a>>>(
@@ -365,7 +366,8 @@ mod tests {
     #[test]
     fn parse_block() {
         let lexer = Scanner::new("{ 10; 20; 30; }");
-        let tree = Parser::parse(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        assert!(errs.is_empty(), "no errors should be returned");
 
         assert_eq!(
             AstPrinter {}.visit_stmt(tree.first().unwrap().clone()),

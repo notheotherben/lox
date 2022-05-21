@@ -11,10 +11,15 @@ fn run_file(path: &str) -> Result<(), LoxError> {
     let lexer = lox::lexer::Scanner::new(content);
     let mut had_error = false;
 
-    let stmts = lox::ast::Parser::parse(&mut lexer.inspect(|t| if let Err(e) = t {
+    let (stmts, errs) = lox::ast::Parser::parse(&mut lexer.inspect(|t| if let Err(e) = t {
         eprintln!("{}", e);
         had_error = true;
-    }).filter_map(|t| t.ok()))?;
+    }).filter_map(|t| t.ok()));
+
+    for err in errs {
+        eprintln!("{}", err);
+        had_error = true;
+    }
 
     if !had_error {
         lox::interpreter::interpret(stmts)?;
