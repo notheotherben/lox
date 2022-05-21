@@ -8,10 +8,28 @@ pub struct Parser;
 
 // Macros which make it easier to implement certain common parts of the parser.
 macro_rules! rd_term {
-    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
+    ($name:ident := $token_id:ident => Vec<Stmt> : $body:expr) => {
+        rd_term!($name := $token_id => Vec<Stmt<'a>> : $body);
+    };
+
+    ($name:ident := $token_id:ident => Stmt : $body:expr) => {
+        rd_term!($name := $token_id => Stmt<'a> : $body);
+    };
+
+    ($name:ident := $token_id:ident => Expr : $body:expr) => {
+        rd_term!($name := $token_id => Expr<'a> : $body);
+    };
+
+    ($name:ident := $token_id:ident => $ret:ty : $body:expr) => {
         fn $name<'a, T: Iterator<Item = Token<'a>>>(
-            tokens: &mut Peekable<T>,
-        ) -> Result<Expr<'a>, LoxError> {
+            $token_id: &mut Peekable<T>,
+        ) -> Result<$ret, LoxError> {
+            $body
+        }
+    };
+
+    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
+        rd_term!($name := tokens => Expr : {
             let left = Self::$left(tokens)?;
     
             if !matches!(tokens.peek(), Some($(Token::$token(..))|+)) {
@@ -25,13 +43,11 @@ macro_rules! rd_term {
                 op,
                 Box::new(right),
             ))
-        }
+        });
     };
 
     ($name:ident := ($($token:ident)|+ $right:ident) | $fallback:ident => unary) => {
-        fn $name<'a, T: Iterator<Item = Token<'a>>>(
-            tokens: &mut Peekable<T>,
-        ) -> Result<Expr<'a>, LoxError> {
+        rd_term!($name := tokens => Expr : {
             if !matches!(tokens.peek(), Some($(Token::$token(_))|+)) {
                 return Self::$fallback(tokens);
             };
@@ -39,7 +55,41 @@ macro_rules! rd_term {
             let op = tokens.next().unwrap();
             let right = Self::$right(tokens)?;
             Ok(Expr::Unary(op, Box::new(right)))
+        });
+    };
+}
+
+macro_rules! consume {
+    ($tokens:ident, $($id:ident@$token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
+        match $tokens.next() {
+            Some($($id@Token::$token(..))|+) => $ok,
+            Some(close_paren) => return Err(errors::user(
+                &format!("{}, but got {} instead.", $msg, close_paren),
+                $advice
+            )),
+            None => return Err(errors::user(
+                &format!("{}, but reached the end of the file instead.", $msg),
+                $advice
+            )),
         }
+    };
+
+    ($tokens:ident, $($token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
+        match $tokens.next() {
+            Some($(Token::$token(..))|+) => $ok,
+            Some(close_paren) => return Err(errors::user(
+                &format!("{}, but got {} instead.", $msg, close_paren),
+                $advice
+            )),
+            None => return Err(errors::user(
+                &format!("{}, but reached the end of the file instead.", $msg),
+                $advice
+            )),
+        }
+    };
+
+    ($tokens:ident, $($token:ident)|+, $msg:expr, $advice:expr) => {
+        consume!($tokens, $($token)|+ => {}, $msg, $advice)
     };
 }
 
@@ -71,63 +121,48 @@ impl Parser {
         Self::expression(&mut tokens)
     }
 
-
-    fn declaration<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Stmt<'a>, LoxError> {
+    rd_term!(declaration := tokens => Stmt : {
         if !matches!(tokens.peek(), Some(Token::Var(_))) {
             return Self::statement(tokens);
         }
 
-        let var = tokens.next().unwrap();
-        match tokens.next() {
-            Some(ident @ Token::Identifier(..)) => {
-                let init = if let Some(Token::Equal(_)) = tokens.peek() {
-                    tokens.next();
-                    Self::expression(tokens)?
-                } else {
-                    Expr::Literal(Literal::Nil)
-                };
+        tokens.next();
+        consume!(tokens, ident@Identifier => {
+            let init = if let Some(Token::Equal(_)) = tokens.peek() {
+                tokens.next();
+                Self::expression(tokens)?
+            } else {
+                Expr::Literal(Literal::Nil)
+            };
 
-                match tokens.next() {
-                    Some(Token::Semicolon(_)) => Ok(Stmt::Var(ident, init)),
-                    Some(tok) => Err(errors::user(
-                        &format!("Expected `;` after variable declaration {}, found `{}`", var, tok),
-                        "Make sure that you have a semicolon after the variable declaration."
-                    )),
-                    None => Err(errors::user(
-                        &format!("Expected `;` after variable declaration {}, found end of input.", var),
-                        "Make sure that you have a semicolon after the variable declaration."
-                    )),
-                }
+            consume!(
+                tokens,
+                Semicolon => Ok(Stmt::Var(ident, init)),
+                "Expected ';' after variable declaration",
+                "Make sure that you have a semicolon after the variable declaration.")
             },
-            Some(other) => Err(errors::user(
-                &format!("Expected an identifier to be provided after {}, but got {} instead.", var, other),
-                "Provide a variable name after the `var` keyword."
-            )),
-            None => Err(errors::user(
-                &format!("Expected an identifier to be provided after {}, but we found the end of the file instead.", var),
-                "Provide a variable name after the `var` keyword."
-            )),
-        }
-    }
+            "Expected an identifier to be provided after 'var'",
+            "Provide a variable name after the `var` keyword.")
+    });
 
-    fn statement<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Stmt<'a>, LoxError> {
+    rd_term!(statement := tokens => Stmt : {
         let stmt = match tokens.peek() {
-            Some(Token::Print(_)) => {
+            Some(Token::For(_)) => {
                 tokens.next();
-                let expr = Self::expression(tokens)?;
-                Stmt::Print(expr)
-            }
-            Some(Token::LeftBrace(_)) => {
-                tokens.next();
-                return Ok(Stmt::Block(Self::block(tokens)?))
+                return Self::for_statement(tokens)
             },
             Some(Token::If(_)) => {
                 tokens.next();
                 return Self::if_statement(tokens)
+            },
+            Some(Token::LeftBrace(_)) => {
+                tokens.next();
+                return Ok(Stmt::Block(Self::block(tokens)?))
+            },
+            Some(Token::Print(_)) => {
+                tokens.next();
+                let expr = Self::expression(tokens)?;
+                Stmt::Print(expr)
             },
             Some(Token::While(_)) => {
                 tokens.next();
@@ -139,51 +174,16 @@ impl Parser {
             }
         };
 
-        match tokens.next() {
-            Some(Token::Semicolon(_)) => Ok(stmt),
-            Some(right) => {
-                Self::synchronize(tokens);
-                Err(errors::user(
-                    &format!("Expected a semicolon to end the expression, but got a {} instead.", right),
-                    "Make sure you have provided a terminating semicolon at the end of your previous expression."))
-            },
-            None => {
-                Err(errors::user(
-                    "Expected a semicolon to end the expression, but reached the end of the file instead.",
-                    "Make sure you have provided a terminating semicolon at the end of your previous expression."))
-            }
-        }
-    }
+        consume!(tokens, Semicolon => Ok(stmt), "Expected ';' after expression", "Make sure that you have a semicolon at the end of your previous expression.")
+    });
 
-    fn if_statement<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Stmt<'a>, LoxError> {
-        match tokens.next() {
-            Some(Token::LeftParen(_)) => {},
-            Some(open_paren) => return Err(errors::user(
-                &format!("Expected an opening parenthesis after the `if` keyword, but got {} instead.", open_paren),
-                "Make sure you have an opening parenthesis after the `if` keyword."
-            )),
-            None => return Err(errors::user(
-                "Expected an opening parenthesis after the `if` keyword, but reached the end of the file instead.",
-                "Make sure you have an opening parenthesis after the `if` keyword."
-            )),
-        };
+    rd_term!(if_statement := tokens => Stmt : {
+        consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `if` keyword", "Make sure you have an opening parenthesis `(` after the `if` keyword.");
 
         let condition = Self::expression(tokens)?;
 
-        match tokens.next() {
-            Some(Token::RightParen(_)) => {},
-            Some(close_paren) => return Err(errors::user(
-                &format!("Expected a closing parenthesis after the condition, but got {} instead.", close_paren),
-                "Make sure you have a closing parenthesis after the condition."
-            )),
-            None => return Err(errors::user(
-                "Expected a closing parenthesis after the condition, but reached the end of the file instead.",
-                "Make sure you have a closing parenthesis after the condition."
-            )),
-        };
-
+        consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.");
+        
         let then_branch = Self::statement(tokens)?;
 
         Ok(Stmt::If(condition, Box::new(then_branch), match tokens.peek() {
@@ -194,45 +194,26 @@ impl Parser {
             },
             _ => None,
         }))
-    }
+    });
 
-    fn while_statement<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Stmt<'a>, LoxError> {
-        match tokens.next() {
-            Some(Token::LeftParen(_)) => {},
-            Some(open_paren) => return Err(errors::user(
-                &format!("Expected an opening parenthesis after the `if` keyword, but got {} instead.", open_paren),
-                "Make sure you have an opening parenthesis after the `if` keyword."
-            )),
-            None => return Err(errors::user(
-                "Expected an opening parenthesis after the `if` keyword, but reached the end of the file instead.",
-                "Make sure you have an opening parenthesis after the `if` keyword."
-            )),
-        };
+    rd_term!(for_statement := tokens => Stmt : {
+        todo!()
+    });
+
+    rd_term!(while_statement := tokens => Stmt : {
+        consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `while` keyword", "Make sure you have an opening parenthesis `(` after the `while` keyword.");
 
         let condition = Self::expression(tokens)?;
 
-        match tokens.next() {
-            Some(Token::RightParen(_)) => {},
-            Some(close_paren) => return Err(errors::user(
-                &format!("Expected a closing parenthesis after the condition, but got {} instead.", close_paren),
-                "Make sure you have a closing parenthesis after the condition."
-            )),
-            None => return Err(errors::user(
-                "Expected a closing parenthesis after the condition, but reached the end of the file instead.",
-                "Make sure you have a closing parenthesis after the condition."
-            )),
-        };
+        consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `while` keyword's condition", "Make sure you have a closing parenthesis `)` after the `while` keyword's condition.");
+        
 
         let body = Self::statement(tokens)?;
 
         Ok(Stmt::While(condition, Box::new(body)))
-    }
+    });
 
-    fn block<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Vec<Stmt<'a>>, LoxError> {
+    rd_term!(block := tokens => Vec<Stmt> : {
         let mut stmts = Vec::new();
 
         while !matches!(tokens.peek(), Some(Token::RightBrace(_)) | None){
@@ -245,24 +226,12 @@ impl Parser {
             }
         }
 
-        if let Some(Token::RightBrace(_)) = tokens.next() {
-            Ok(stmts)
-        } else {
-            Err(errors::user(
-                "Expected a closing brace after the block, but reached the end of the file instead.",
-                "Make sure you have a closing brace at the end of your block."))
-        }
-    }
+        consume!(tokens, RightBrace => Ok(stmts), "Expected a closing brace `}` after the block", "Make sure you have a closing brace `}` after the block.")
+    });
 
-    fn expression<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        Self::assignment(tokens)
-    }
+    rd_term!(expression := tokens => Expr : Self::assignment(tokens));
 
-    fn assignment<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
+    rd_term!(assignment := tokens => Expr : {
         let expr = Self::or(tokens)?;
 
         if !matches!(tokens.peek(), Some(Token::Equal(_))) {
@@ -279,7 +248,7 @@ impl Parser {
                 "Make sure that you provide the name of a variable to assign to."
             )),
         }
-    }
+    });
 
     rd_term!(or := and (Or and)* => binary);
 
@@ -295,9 +264,7 @@ impl Parser {
 
     rd_term!(unary := (Bang|Minus term)| primary => unary);
 
-    fn primary<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
+    rd_term!(primary := tokens => Expr : {
         match tokens.next() {
             Some(Token::False(_)) => Ok(Expr::Literal(Literal::Bool(false))),
             Some(Token::True(_)) => Ok(Expr::Literal(Literal::Bool(true))),
@@ -347,7 +314,7 @@ impl Parser {
                 "Reached the end of the input while waiting for one of ['true', 'false', 'nil', number, string, '('].",
                 "Make sure that you have provided a valid expression."))
         }
-    }
+    });
 
     fn synchronize<'a, T: Iterator<Item = Token<'a>>>(tokens: &mut Peekable<T>) {
         while let Some(token) = tokens.next() {
