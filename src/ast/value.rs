@@ -8,6 +8,16 @@ pub enum Literal {
     String(String)
 }
 
+impl Literal {
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Literal::Nil => false,
+            Literal::Bool(b) => *b,
+            _ => true
+        }
+    }
+}
+
 impl PartialOrd for Literal {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {

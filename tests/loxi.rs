@@ -35,3 +35,8 @@ fn run_file(path: &str) -> Result<(), LoxError> {
 fn block_scoping() {
     run_file("tests/data/block_scoping.lox").expect("no errors");
 }
+
+#[test]
+fn if_conditionals() {
+    run_file("tests/data/if_conditionals.lox").expect("no errors");
+}

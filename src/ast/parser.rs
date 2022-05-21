@@ -86,7 +86,12 @@ impl Parser {
                 Stmt::Print(expr)
             }
             Some(Token::LeftBrace(_)) => {
+                tokens.next();
                 return Ok(Stmt::Block(Self::block(tokens)?))
+            },
+            Some(Token::If(_)) => {
+                tokens.next();
+                return Self::if_statement(tokens)
             },
             _ => {
                 let expr = Self::expression(tokens)?;
@@ -110,12 +115,51 @@ impl Parser {
         }
     }
 
+    fn if_statement<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Stmt<'a>, LoxError> {
+        match tokens.next() {
+            Some(Token::LeftParen(_)) => {},
+            Some(open_paren) => return Err(errors::user(
+                &format!("Expected an opening parenthesis after the `if` keyword, but got {} instead.", open_paren),
+                "Make sure you have an opening parenthesis after the `if` keyword."
+            )),
+            None => return Err(errors::user(
+                "Expected an opening parenthesis after the `if` keyword, but reached the end of the file instead.",
+                "Make sure you have an opening parenthesis after the `if` keyword."
+            )),
+        };
+
+        let condition = Self::expression(tokens)?;
+
+        match tokens.next() {
+            Some(Token::RightParen(_)) => {},
+            Some(close_paren) => return Err(errors::user(
+                &format!("Expected a closing parenthesis after the condition, but got {} instead.", close_paren),
+                "Make sure you have a closing parenthesis after the condition."
+            )),
+            None => return Err(errors::user(
+                "Expected a closing parenthesis after the condition, but reached the end of the file instead.",
+                "Make sure you have a closing parenthesis after the condition."
+            )),
+        };
+
+        let then_branch = Self::statement(tokens)?;
+
+        Ok(Stmt::If(condition, Box::new(then_branch), match tokens.peek() {
+            Some(Token::Else(_)) => {
+                tokens.next();
+                let else_branch = Self::statement(tokens)?;
+                 Some(Box::new(else_branch))
+            },
+            _ => None,
+        }))
+    }
+
     fn block<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
     ) -> Result<Vec<Stmt<'a>>, LoxError> {
         let mut stmts = Vec::new();
-
-        tokens.next();
 
         while match tokens.peek() {
             Some(Token::RightBrace(_)) => false,

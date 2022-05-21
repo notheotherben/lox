@@ -1,12 +1,22 @@
 use std::{rc::Rc, sync::RwLock};
 
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::Token, errors};
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt}, LoxError, lexer::Token, errors};
 
 use super::env::Environment;
 
 #[derive(Default, Debug, Clone)]
 pub struct Interpreter{
     env: Rc<RwLock<Environment>>,
+}
+
+impl Interpreter {
+    pub fn interpret(&mut self, stmts: Vec<Stmt<'_>>) -> Result<(), LoxError> {
+        for stmt in stmts {
+            self.visit_stmt(stmt)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
@@ -113,11 +123,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
                 }
             },
             Token::Bang(_) => {
-                match right {
-                    Literal::Bool(b) => Ok(Literal::Bool(!b)),
-                    Literal::Nil => Ok(Literal::Bool(true)),
-                    _ => Ok(Literal::Bool(false))
-                }
+                Ok(Literal::Bool(!right.is_truthy()))
             },
             _ => panic!("We received an unexpected unary operator: {:?}", op)
         }
@@ -184,6 +190,18 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
 
         self.env = parent;
         result
+    }
+
+    fn visit_if(&mut self, cond: crate::ast::Expr<'_>, then_branch: crate::ast::Stmt<'_>, else_branch: Option<crate::ast::Stmt<'_>>) -> Result<Literal, LoxError> {
+        let cond = self.visit_expr(cond)?;
+
+        if cond.is_truthy() {
+            self.visit_stmt(then_branch)
+        } else if let Some(else_branch) = else_branch {
+            self.visit_stmt(else_branch)
+        } else {
+            Ok(Literal::Nil)
+        }
     }
 }
 

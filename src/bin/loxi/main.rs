@@ -1,14 +1,15 @@
 use std::io::Write;
 
-use lox::{errors, LoxError};
+use lox::{errors, LoxError, interpreter::Interpreter};
 
 fn main() {
+    let mut interpreter = Interpreter::default();
     let result = match std::env::args().nth(1) {
         Some(filename) => {
-            run_file(&filename)
+            run_file(&filename, &mut interpreter)
         },
         None => {
-            run_prompt()
+            run_prompt(&mut interpreter)
         }
     };
 
@@ -18,7 +19,7 @@ fn main() {
     }
 }
 
-fn run_file(filename: &str) -> Result<(), LoxError> {
+fn run_file(filename: &str, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     let content = std::fs::read(filename)?;
     let content = std::str::from_utf8(&content).map_err(|e| errors::user_with_internal(
         "The file you provided is not a valid UTF-8 file.",
@@ -26,10 +27,10 @@ fn run_file(filename: &str) -> Result<(), LoxError> {
         e,
     ))?;
 
-    run(content)
+    run(content, interpreter)
 }
 
-fn run_prompt() -> Result<(), LoxError> {
+fn run_prompt(interpreter: &mut Interpreter) -> Result<(), LoxError> {
     let mut buffer = String::new();
     loop {
         print!("> ");
@@ -42,7 +43,7 @@ fn run_prompt() -> Result<(), LoxError> {
             break;
         }
 
-        if let Err(e) = run(&buffer) {
+        if let Err(e) = run(&buffer, interpreter) {
             eprintln!("{}", e);
         }
     }
@@ -50,7 +51,7 @@ fn run_prompt() -> Result<(), LoxError> {
     Ok(())
 }
 
-fn run(source: &str) -> Result<(), LoxError> {
+fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     let lexer = lox::lexer::Scanner::new(source);
     let mut had_error = false;
 
@@ -65,7 +66,7 @@ fn run(source: &str) -> Result<(), LoxError> {
     }
 
     if !had_error {
-        lox::interpreter::interpret(stmts)?;
+        interpreter.interpret(stmts)?;
     }
 
     Ok(())

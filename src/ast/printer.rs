@@ -56,6 +56,20 @@ impl StmtVisitor<String> for AstPrinter {
         result.push(')');
         result
     }
+
+    fn visit_if(&mut self, cond: Expr<'_>, then_branch: Stmt<'_>, else_branch: Option<Stmt<'_>>) -> String {
+        let mut result = String::new();
+        result.push_str("(if ");
+        result.push_str(&self.visit_expr(cond));
+        result.push(' ');
+        result.push_str(&self.visit_stmt(then_branch));
+        if let Some(else_branch) = else_branch {
+            result.push(' ');
+            result.push_str(&self.visit_stmt(else_branch));
+        }
+        result.push(')');
+        result
+    }
 }
 
 #[cfg(test)]
