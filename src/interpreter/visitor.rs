@@ -1,10 +1,12 @@
+use std::{rc::Rc, sync::RwLock};
+
 use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::Token, errors};
 
 use super::env::Environment;
 
 #[derive(Default, Debug, Clone)]
 pub struct Interpreter{
-    env: Environment,
+    env: Rc<RwLock<Environment>>,
 }
 
 impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
@@ -130,8 +132,8 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
     }
 
     fn visit_var_ref(&mut self, name: Token<'_>) -> Result<Literal, LoxError> {
-        match self.env.get(name.lexeme()) {
-            Some(value) => Ok(value.clone()),
+        match self.env.read().unwrap().get(name.lexeme()) {
+            Some(value) => Ok(value),
             None => Err(errors::user(
                 &format!("Variable `{}` is not defined.", name.lexeme()),
                 "Define the variable before you attempt to reference it."
@@ -141,7 +143,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
 
     fn visit_assign(&mut self, ident: Token<'_>, value: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
         let value = self.visit_expr(value)?;
-        self.env.define(ident.lexeme(), value.clone());
+        self.env.write().unwrap().assign(ident.lexeme(), value.clone())?;
         Ok(value)
     }
 
@@ -163,7 +165,7 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
 
     fn visit_var_def(&mut self, name: Token<'_>, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
         let value = self.visit_expr(expr)?;
-        self.env.define(name.lexeme(), value);
+        self.env.write().unwrap().define(name.lexeme(), value);
         Ok(Literal::Nil)
     }
 
