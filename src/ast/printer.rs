@@ -74,6 +74,10 @@ impl StmtVisitor<String> for AstPrinter {
         result.push(')');
         result
     }
+
+    fn visit_while(&mut self, cond: Expr<'_>, body: Stmt<'_>) -> String {
+        format!("(while {} {})", self.visit_expr(cond), self.visit_stmt(body))
+    }
 }
 
 #[cfg(test)]

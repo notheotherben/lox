@@ -213,6 +213,18 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
             Ok(Literal::Nil)
         }
     }
+
+    fn visit_while(&mut self, cond: crate::ast::Expr<'_>, body: crate::ast::Stmt<'_>) -> Result<Literal, LoxError> {
+        // TODO: Figure out how to avoid the need to clone cond/body here
+        let mut cont = self.visit_expr(cond.clone())?;
+        while cont.is_truthy() {
+            self.visit_stmt(body.clone())?;
+
+            cont = self.visit_expr(cond.clone())?;
+        }
+
+        Ok(Literal::Nil)
+    }
 }
 
 #[cfg(test)]

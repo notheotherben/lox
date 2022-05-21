@@ -92,6 +92,10 @@ impl Parser {
                 tokens.next();
                 return Self::if_statement(tokens)
             },
+            Some(Token::While(_)) => {
+                tokens.next();
+                return Self::while_statement(tokens)
+            },
             _ => {
                 let expr = Self::expression(tokens)?;
                 Stmt::Expression(expr)
@@ -153,6 +157,40 @@ impl Parser {
             },
             _ => None,
         }))
+    }
+
+    fn while_statement<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Stmt<'a>, LoxError> {
+        match tokens.next() {
+            Some(Token::LeftParen(_)) => {},
+            Some(open_paren) => return Err(errors::user(
+                &format!("Expected an opening parenthesis after the `if` keyword, but got {} instead.", open_paren),
+                "Make sure you have an opening parenthesis after the `if` keyword."
+            )),
+            None => return Err(errors::user(
+                "Expected an opening parenthesis after the `if` keyword, but reached the end of the file instead.",
+                "Make sure you have an opening parenthesis after the `if` keyword."
+            )),
+        };
+
+        let condition = Self::expression(tokens)?;
+
+        match tokens.next() {
+            Some(Token::RightParen(_)) => {},
+            Some(close_paren) => return Err(errors::user(
+                &format!("Expected a closing parenthesis after the condition, but got {} instead.", close_paren),
+                "Make sure you have a closing parenthesis after the condition."
+            )),
+            None => return Err(errors::user(
+                "Expected a closing parenthesis after the condition, but reached the end of the file instead.",
+                "Make sure you have a closing parenthesis after the condition."
+            )),
+        };
+
+        let body = Self::statement(tokens)?;
+
+        Ok(Stmt::While(condition, Box::new(body)))
     }
 
     fn block<'a, T: Iterator<Item = Token<'a>>>(
@@ -400,34 +438,52 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{printer::AstPrinter, ExprVisitor, StmtVisitor},
+        ast::{printer::AstPrinter, StmtVisitor, ExprVisitor},
         lexer::Scanner,
     };
 
     use super::Parser;
 
-    #[test]
-    fn parse_basic_expression() {
-        let lexer = Scanner::new("10 - 5 / (2 * 3)");
-        let tree = Parser::parse_expr(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
-
-        assert_eq!(
-            AstPrinter {}.visit_expr(tree),
-            "(- 10 (/ 5 (group (* 2 3))))",
+    fn test_parse_expr(source: &str, expected: &str) {
+        let lexer = Scanner::new(source);
+        let expr = Parser::parse_expr(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
+         assert_eq!(
+            AstPrinter {}.visit_expr(expr),
+            expected,
             "the expression should be parsed correctly"
-        )
+        );
     }
 
-    #[test]
-    fn parse_block() {
-        let lexer = Scanner::new("{ 10; 20; 30; }");
+    fn test_parse(source: &str, expected: &str) {
+        let lexer = Scanner::new(source);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         assert!(errs.is_empty(), "no errors should be returned");
 
         assert_eq!(
             AstPrinter {}.visit_stmt(tree.first().unwrap().clone()),
-            "(block (10) (20) (30))",
+            expected,
             "the expression should be parsed correctly"
-        )
+        );
+    }
+
+    #[test]
+    fn parse_basic_expression() {
+        test_parse_expr("1 + 2", "(+ 1 2)");
+        test_parse_expr("10 - 5 / (2 * 3)", "(- 10 (/ 5 (group (* 2 3))))");
+    }
+
+    #[test]
+    fn parse_block() {
+        test_parse("{ 10; 20; 30; }", "(block (10) (20) (30))");
+    }
+
+    #[test]
+    fn parse_if() {
+        test_parse("if (x > 5) { 10; } else { 20; }", "(if (> x 5) (block (10)) (block (20)))");
+    }
+
+    #[test]
+    fn parse_while() {
+        test_parse("while (x > 5) { 10; }", "(while (> x 5) (block (10)))");
     }
 }
