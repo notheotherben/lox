@@ -84,6 +84,9 @@ impl Parser {
                 let expr = Self::expression(tokens)?;
                 Stmt::Print(expr)
             }
+            Some(Token::LeftBrace(_)) => {
+                return Ok(Stmt::Block(Self::block(tokens)?))
+            },
             _ => {
                 let expr = Self::expression(tokens)?;
                 Stmt::Expression(expr)
@@ -103,6 +106,36 @@ impl Parser {
                     "Expected a semicolon to end the expression, but reached the end of the file instead.",
                     "Make sure you have provided a terminating semicolon at the end of your previous expression."))
             }
+        }
+    }
+
+    fn block<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Vec<Stmt<'a>>, LoxError> {
+        let mut stmts = Vec::new();
+
+        tokens.next();
+
+        while match tokens.peek() {
+            Some(Token::RightBrace(_)) => false,
+            Some(_) => true,
+            None => false,
+        } {
+            match Self::declaration(tokens) {
+                Ok(stmt) => stmts.push(stmt),
+                Err(err) => {
+                    Self::synchronize(tokens);
+                    return Err(err)
+                },
+            }
+        }
+
+        if let Some(Token::RightBrace(_)) = tokens.next() {
+            Ok(stmts)
+        } else {
+            Err(errors::user(
+                "Expected a closing brace after the block, but reached the end of the file instead.",
+                "Make sure you have a closing brace at the end of your block."))
         }
     }
 
@@ -311,7 +344,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{printer::AstPrinter, ExprVisitor},
+        ast::{printer::AstPrinter, ExprVisitor, StmtVisitor},
         lexer::Scanner,
     };
 
@@ -325,6 +358,18 @@ mod tests {
         assert_eq!(
             AstPrinter {}.visit_expr(tree),
             "(- 10 (/ 5 (group (* 2 3))))",
+            "the expression should be parsed correctly"
+        )
+    }
+
+    #[test]
+    fn parse_block() {
+        let lexer = Scanner::new("{ 10; 20; 30; }");
+        let tree = Parser::parse(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
+
+        assert_eq!(
+            AstPrinter {}.visit_stmt(tree.first().unwrap().clone()),
+            "(block (10) (20) (30))",
             "the expression should be parsed correctly"
         )
     }

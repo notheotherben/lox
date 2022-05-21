@@ -169,7 +169,22 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
         Ok(Literal::Nil)
     }
 
-    
+    fn visit_block(&mut self, stmts: Vec<crate::ast::Stmt<'_>>) -> Result<Literal, LoxError> {
+        let parent = Rc::clone(&self.env);
+        self.env = Environment::child(Rc::clone(&parent));
+
+        let mut result = Ok(Literal::Nil);
+
+        for stmt in stmts {
+            if let Err(e) = self.visit_stmt(stmt) {
+                result = Err(e);
+                break;
+            }
+        }
+
+        self.env = parent;
+        result
+    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use super::{Expr, ExprVisitor, Literal};
+use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt};
 
 pub struct AstPrinter{}
 
@@ -31,6 +31,31 @@ impl ExprVisitor<String> for AstPrinter {
     fn visit_assign(&mut self, ident: crate::lexer::Token<'_>, value: Expr<'_>) -> String {
         format!("(= {} {})", ident.lexeme(), self.visit_expr(value))
     }    
+}
+
+impl StmtVisitor<String> for AstPrinter {
+    fn visit_print(&mut self, expr: Expr<'_>) -> String {
+        format!("(print {})", self.visit_expr(expr))
+    }
+
+    fn visit_stmt_expr(&mut self, expr: Expr<'_>) -> String {
+        format!("({})", self.visit_expr(expr))
+    }
+
+    fn visit_var_def(&mut self, name: crate::lexer::Token<'_>, expr: Expr<'_>) -> String {
+        format!("(var {} {})", name.lexeme(), self.visit_expr(expr))
+    }
+
+    fn visit_block(&mut self, stmts: Vec<Stmt<'_>>) -> String {
+        let mut result = String::new();
+        result.push_str("(block");
+        for stmt in stmts {
+            result.push(' ');
+            result.push_str(&self.visit_stmt(stmt));
+        }
+        result.push(')');
+        result
+    }
 }
 
 #[cfg(test)]

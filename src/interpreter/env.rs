@@ -9,8 +9,8 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn child(parent: Rc<RwLock<Environment>>) -> Self {
-        Self { enclosing: Some(parent), ..Default::default() }
+    pub fn child(parent: Rc<RwLock<Environment>>) -> Rc<RwLock<Self>> {
+        Rc::new(RwLock::new(Self { enclosing: Some(parent), ..Default::default() }))
     }
 
     pub fn define<K: Into<String>>(&mut self, key: K, value: Literal) {
@@ -54,22 +54,22 @@ mod tests {
 
     #[test]
     fn test_scoped() {
-        let mut global = Rc::new(RwLock::new(Environment::default()));
+        let global = Rc::new(RwLock::new(Environment::default()));
         global.write().unwrap().define("a", Literal::Number(1.0));
         global.write().unwrap().define("b", Literal::Number(2.0));
 
-        let mut env = Environment::child(Rc::clone(&global));
-        assert_eq!(env.get("a"), Some(Literal::Number(1.0)));
+        let env = Environment::child(Rc::clone(&global));
+        assert_eq!(env.read().unwrap().get("a"), Some(Literal::Number(1.0)));
 
-        env.define("a", Literal::Number(3.0));
-        env.define("c", Literal::Number(4.0));
+        env.write().unwrap().define("a", Literal::Number(3.0));
+        env.write().unwrap().define("c", Literal::Number(4.0));
 
         assert_eq!(global.read().unwrap().get("a"), Some(Literal::Number(1.0)));
 
 
-        assert_eq!(env.get("a"), Some(Literal::Number(3.0)));
-        assert_eq!(env.get("b"), Some(Literal::Number(2.0)));
-        assert_eq!(env.get("c"), Some(Literal::Number(4.0)));
-        assert_eq!(env.get("d"), None);
+        assert_eq!(env.read().unwrap().get("a"), Some(Literal::Number(3.0)));
+        assert_eq!(env.read().unwrap().get("b"), Some(Literal::Number(2.0)));
+        assert_eq!(env.read().unwrap().get("c"), Some(Literal::Number(4.0)));
+        assert_eq!(env.read().unwrap().get("d"), None);
     }
 }
