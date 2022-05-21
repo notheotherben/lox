@@ -6,6 +6,43 @@ use super::{Expr, Literal, Stmt};
 
 pub struct Parser;
 
+// Macros which make it easier to implement certain common parts of the parser.
+macro_rules! rd_term {
+    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
+        fn $name<'a, T: Iterator<Item = Token<'a>>>(
+            tokens: &mut Peekable<T>,
+        ) -> Result<Expr<'a>, LoxError> {
+            let left = Self::$left(tokens)?;
+    
+            if !matches!(tokens.peek(), Some($(Token::$token(..))|+)) {
+                return Ok(left)
+            }
+    
+            let op = tokens.next().unwrap();
+            let right = Self::$right(tokens)?;
+            Ok(Expr::Binary(
+                Box::new(left),
+                op,
+                Box::new(right),
+            ))
+        }
+    };
+
+    ($name:ident := ($($token:ident)|+ $right:ident) | $fallback:ident => unary) => {
+        fn $name<'a, T: Iterator<Item = Token<'a>>>(
+            tokens: &mut Peekable<T>,
+        ) -> Result<Expr<'a>, LoxError> {
+            if !matches!(tokens.peek(), Some($(Token::$token(_))|+)) {
+                return Self::$fallback(tokens);
+            };
+    
+            let op = tokens.next().unwrap();
+            let right = Self::$right(tokens)?;
+            Ok(Expr::Unary(op, Box::new(right)))
+        }
+    };
+}
+
 impl Parser {
     pub fn parse<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut T,
@@ -244,117 +281,19 @@ impl Parser {
         }
     }
 
-    fn or<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        let mut expr = Self::and(tokens)?;
+    rd_term!(or := and (Or and)* => binary);
 
-        while matches!(tokens.peek(), Some(Token::Or(_))) {
-            let op = tokens.next().unwrap();
-            let right = Self::and(tokens)?;
-            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
-        }
+    rd_term!(and := equality (And equality)* => binary);
 
-        Ok(expr)
-    }
+    rd_term!(equality := comparison (BangEqual|EqualEqual equality)* => binary);
 
-    fn and<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        let mut expr = Self::equality(tokens)?;
+    rd_term!(comparison := term (Greater | GreaterEqual | Less | LessEqual equality)* => binary);
 
-        while matches!(tokens.peek(), Some(Token::And(_))) {
-            let op = tokens.next().unwrap();
-            let right = Self::equality(tokens)?;
-            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
-        }
+    rd_term!(term := factor (Minus | Plus equality)* => binary);
 
-        Ok(expr)
-    }
+    rd_term!(factor := unary (Star | Slash equality)* => binary);
 
-    fn equality<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        let left = Self::comparison(tokens)?;
-
-        if !matches!(tokens.peek(), Some(Token::BangEqual(_) | Token::EqualEqual(_))) {
-            return Ok(left)
-        }
-
-        let op = tokens.next().unwrap();
-        let right = Self::equality(tokens)?;
-        Ok(Expr::Binary(
-            Box::new(left),
-            op,
-            Box::new(right),
-        ))
-    }
-
-    fn comparison<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        let left = Self::term(tokens)?;
-
-        if !matches!(tokens.peek(), Some(Token::Greater(_) | Token::GreaterEqual(_) | Token::Less(_) | Token::LessEqual(_))) {
-            return Ok(left)
-        }
-
-        let op = tokens.next().unwrap();
-        let right = Self::equality(tokens)?;
-        Ok(Expr::Binary(
-            Box::new(left),
-            op,
-            Box::new(right),
-        ))
-    }
-
-    fn term<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        let left = Self::factor(tokens)?;
-
-        if !matches!(tokens.peek(), Some(Token::Minus(_) | Token::Plus(_))) {
-            return Ok(left)
-        }
-
-        let op = tokens.next().unwrap();
-        let right = Self::equality(tokens)?;
-        Ok(Expr::Binary(
-            Box::new(left),
-            op,
-            Box::new(right),
-        ))
-    }
-
-    fn factor<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        let left = Self::unary(tokens)?;
-
-        if !matches!(tokens.peek(), Some(Token::Slash(_) | Token::Star(_))) {
-            return Ok(left)
-        }
-
-        let op = tokens.next().unwrap();
-        let right = Self::equality(tokens)?;
-        Ok(Expr::Binary(
-            Box::new(left),
-            op,
-            Box::new(right),
-        ))
-    }
-
-    fn unary<'a, T: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<T>,
-    ) -> Result<Expr<'a>, LoxError> {
-        if !matches!(tokens.peek(), Some(Token::Bang(_) | Token::Minus(_))) {
-            return Self::primary(tokens);
-        };
-
-        let op = tokens.next().unwrap();
-        let right = Self::term(tokens)?;
-        Ok(Expr::Unary(op, Box::new(right)))
-    }
+    rd_term!(unary := (Bang|Minus term)| primary => unary);
 
     fn primary<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
