@@ -38,10 +38,9 @@ impl Parser {
     fn declaration<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
     ) -> Result<Stmt<'a>, LoxError> {
-        match tokens.peek() {
-            Some(Token::Var(_)) => {},
-            _ => return Self::statement(tokens),
-        };
+        if !matches!(tokens.peek(), Some(Token::Var(_))) {
+            return Self::statement(tokens);
+        }
 
         let var = tokens.next().unwrap();
         match tokens.next() {
@@ -161,11 +160,7 @@ impl Parser {
     ) -> Result<Vec<Stmt<'a>>, LoxError> {
         let mut stmts = Vec::new();
 
-        while match tokens.peek() {
-            Some(Token::RightBrace(_)) => false,
-            Some(_) => true,
-            None => false,
-        } {
+        while !matches!(tokens.peek(), Some(Token::RightBrace(_)) | None){
             match Self::declaration(tokens) {
                 Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
@@ -193,12 +188,11 @@ impl Parser {
     fn assignment<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
     ) -> Result<Expr<'a>, LoxError> {
-        let expr = Self::equality(tokens)?;
+        let expr = Self::or(tokens)?;
 
-        match tokens.peek() {
-            Some(Token::Equal(_)) => {},
-            _ => return Ok(expr),
-        };
+        if !matches!(tokens.peek(), Some(Token::Equal(_))) {
+            return Ok(expr)
+        }
 
         let equals = tokens.next().unwrap();
         let value = Self::assignment(tokens)?;
@@ -212,14 +206,41 @@ impl Parser {
         }
     }
 
+    fn or<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Expr<'a>, LoxError> {
+        let mut expr = Self::and(tokens)?;
+
+        while matches!(tokens.peek(), Some(Token::Or(_))) {
+            let op = tokens.next().unwrap();
+            let right = Self::and(tokens)?;
+            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
+        }
+
+        Ok(expr)
+    }
+
+    fn and<'a, T: Iterator<Item = Token<'a>>>(
+        tokens: &mut Peekable<T>,
+    ) -> Result<Expr<'a>, LoxError> {
+        let mut expr = Self::equality(tokens)?;
+
+        while matches!(tokens.peek(), Some(Token::And(_))) {
+            let op = tokens.next().unwrap();
+            let right = Self::equality(tokens)?;
+            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
+        }
+
+        Ok(expr)
+    }
+
     fn equality<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
     ) -> Result<Expr<'a>, LoxError> {
         let left = Self::comparison(tokens)?;
 
-        match tokens.peek() {
-            Some(Token::BangEqual(_) | Token::EqualEqual(_)) => {}
-            _ => return Ok(left),
+        if !matches!(tokens.peek(), Some(Token::BangEqual(_) | Token::EqualEqual(_))) {
+            return Ok(left)
         }
 
         let op = tokens.next().unwrap();
@@ -236,11 +257,8 @@ impl Parser {
     ) -> Result<Expr<'a>, LoxError> {
         let left = Self::term(tokens)?;
 
-        match tokens.peek() {
-            Some(
-                Token::Greater(_) | Token::GreaterEqual(_) | Token::Less(_) | Token::LessEqual(_),
-            ) => {}
-            _ => return Ok(left),
+        if !matches!(tokens.peek(), Some(Token::Greater(_) | Token::GreaterEqual(_) | Token::Less(_) | Token::LessEqual(_))) {
+            return Ok(left)
         }
 
         let op = tokens.next().unwrap();
@@ -257,11 +275,8 @@ impl Parser {
     ) -> Result<Expr<'a>, LoxError> {
         let left = Self::factor(tokens)?;
 
-        match tokens.peek() {
-            Some(
-                Token::Minus(_) | Token::Plus(_),
-            ) => {}
-            _ => return Ok(left),
+        if !matches!(tokens.peek(), Some(Token::Minus(_) | Token::Plus(_))) {
+            return Ok(left)
         }
 
         let op = tokens.next().unwrap();
@@ -278,11 +293,8 @@ impl Parser {
     ) -> Result<Expr<'a>, LoxError> {
         let left = Self::unary(tokens)?;
 
-        match tokens.peek() {
-            Some(
-                Token::Slash(_) | Token::Star(_),
-            ) => {}
-            _ => return Ok(left),
+        if !matches!(tokens.peek(), Some(Token::Slash(_) | Token::Star(_))) {
+            return Ok(left)
         }
 
         let op = tokens.next().unwrap();
@@ -297,9 +309,8 @@ impl Parser {
     fn unary<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut Peekable<T>,
     ) -> Result<Expr<'a>, LoxError> {
-        match tokens.peek() {
-            Some(Token::Bang(_) | Token::Minus(_)) => {}
-            _ => return Self::primary(tokens),
+        if !matches!(tokens.peek(), Some(Token::Bang(_) | Token::Minus(_))) {
+            return Self::primary(tokens);
         };
 
         let op = tokens.next().unwrap();

@@ -153,6 +153,16 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
         Ok(value)
     }
 
+    fn visit_logical(&mut self, left: crate::ast::Expr<'_>, op: Token<'_>, right: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+        let left = self.visit_expr(left)?;
+
+        match op {
+            Token::And(_) if left.is_truthy() => self.visit_expr(right),
+            Token::Or(_) if !left.is_truthy() => self.visit_expr(right),
+            _ => Ok(left)
+        }
+    }
+
     
 }
 

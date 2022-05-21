@@ -8,6 +8,7 @@ pub enum Expr<'a> {
     Binary(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
     Grouping(Box<Expr<'a>>),
     Literal(Literal),
+    Logical(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
     Unary(Token<'a>, Box<Expr<'a>>),
     Var(Token<'a>),
 }
@@ -23,6 +24,9 @@ pub trait ExprVisitor<T> {
             },
             Expr::Grouping(expr) => {
                 self.visit_grouping(*expr)
+            },
+            Expr::Logical(left, op, right) => {
+                self.visit_logical(*left, op, *right)
             },
             Expr::Literal(value) => {
                 self.visit_literal(value)
@@ -43,6 +47,8 @@ pub trait ExprVisitor<T> {
     fn visit_grouping(&mut self, expr: Expr<'_>) -> T;
 
     fn visit_literal(&mut self, value: Literal) -> T;
+
+    fn visit_logical(&mut self, left: Expr<'_>, op: Token<'_>, right: Expr<'_>) -> T;
 
     fn visit_unary<'a>(&mut self, op: Token<'a>, expr: Expr<'a>) -> T;
 

@@ -20,6 +20,10 @@ impl ExprVisitor<String> for AstPrinter {
         }
     }
 
+    fn visit_logical(&mut self, left: Expr<'_>, op: crate::lexer::Token<'_>, right: Expr<'_>) -> String {
+        format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
+    }
+
     fn visit_unary<'a>(&mut self, op: crate::lexer::Token<'a>, expr: Expr<'a>) -> String {
         format!("({} {})", op.lexeme(), self.visit_expr(expr))
     }
