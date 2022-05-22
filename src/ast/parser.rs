@@ -59,7 +59,17 @@ macro_rules! rd_term {
     };
 }
 
-macro_rules! consume {
+macro_rules! rd_matches {
+    ($tokens:ident, $($token:ident)|+) => {
+        if matches!($tokens.peek(), Some($(Token::$token(..))|+)) {
+            Some($tokens.next().unwrap())
+        } else {
+            None
+        }
+    };
+}
+
+macro_rules! rd_consume {
     ($tokens:ident, $($id:ident@$token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
         match $tokens.next() {
             Some($($id@Token::$token(..))|+) => $ok,
@@ -89,7 +99,7 @@ macro_rules! consume {
     };
 
     ($tokens:ident, $($token:ident)|+, $msg:expr, $advice:expr) => {
-        consume!($tokens, $($token)|+ => {}, $msg, $advice)
+        rd_consume!($tokens, $($token)|+ => {}, $msg, $advice)
     };
 }
 
@@ -122,12 +132,11 @@ impl Parser {
     }
 
     rd_term!(declaration := tokens => Stmt : {
-        if !matches!(tokens.peek(), Some(Token::Var(_))) {
+        if rd_matches!(tokens, Var).is_none() {
             return Self::statement(tokens);
         }
 
-        tokens.next();
-        consume!(tokens, ident@Identifier => {
+        rd_consume!(tokens, ident@Identifier => {
             let init = if let Some(Token::Equal(_)) = tokens.peek() {
                 tokens.next();
                 Self::expression(tokens)?
@@ -135,7 +144,7 @@ impl Parser {
                 Expr::Literal(Literal::Nil)
             };
 
-            consume!(
+            rd_consume!(
                 tokens,
                 Semicolon => Ok(Stmt::Var(ident, init)),
                 "Expected ';' after variable declaration",
@@ -174,15 +183,15 @@ impl Parser {
             }
         };
 
-        consume!(tokens, Semicolon => Ok(stmt), "Expected ';' after expression", "Make sure that you have a semicolon at the end of your previous expression.")
+        rd_consume!(tokens, Semicolon => Ok(stmt), "Expected ';' after expression", "Make sure that you have a semicolon at the end of your previous expression.")
     });
 
     rd_term!(if_statement := tokens => Stmt : {
-        consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `if` keyword", "Make sure you have an opening parenthesis `(` after the `if` keyword.");
+        rd_consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `if` keyword", "Make sure you have an opening parenthesis `(` after the `if` keyword.");
 
         let condition = Self::expression(tokens)?;
 
-        consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.");
+        rd_consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.");
         
         let then_branch = Self::statement(tokens)?;
 
@@ -201,11 +210,11 @@ impl Parser {
     });
 
     rd_term!(while_statement := tokens => Stmt : {
-        consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `while` keyword", "Make sure you have an opening parenthesis `(` after the `while` keyword.");
+        rd_consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `while` keyword", "Make sure you have an opening parenthesis `(` after the `while` keyword.");
 
         let condition = Self::expression(tokens)?;
 
-        consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `while` keyword's condition", "Make sure you have a closing parenthesis `)` after the `while` keyword's condition.");
+        rd_consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `while` keyword's condition", "Make sure you have a closing parenthesis `)` after the `while` keyword's condition.");
         
 
         let body = Self::statement(tokens)?;
@@ -216,7 +225,7 @@ impl Parser {
     rd_term!(block := tokens => Vec<Stmt> : {
         let mut stmts = Vec::new();
 
-        while !matches!(tokens.peek(), Some(Token::RightBrace(_)) | None){
+        while !matches!(tokens.peek(), Some(Token::RightBrace(_)) | None) {
             match Self::declaration(tokens) {
                 Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
@@ -226,7 +235,7 @@ impl Parser {
             }
         }
 
-        consume!(tokens, RightBrace => Ok(stmts), "Expected a closing brace `}` after the block", "Make sure you have a closing brace `}` after the block.")
+        rd_consume!(tokens, RightBrace => Ok(stmts), "Expected a closing brace `}` after the block", "Make sure you have a closing brace `}` after the block.")
     });
 
     rd_term!(expression := tokens => Expr : Self::assignment(tokens));
@@ -234,19 +243,18 @@ impl Parser {
     rd_term!(assignment := tokens => Expr : {
         let expr = Self::or(tokens)?;
 
-        if !matches!(tokens.peek(), Some(Token::Equal(_))) {
-            return Ok(expr)
-        }
+        if let Some(equals) = rd_matches!(tokens, Equal) {
+            let value = Self::assignment(tokens)?;
 
-        let equals = tokens.next().unwrap();
-        let value = Self::assignment(tokens)?;
-
-        match expr {
-            Expr::Var(name) => Ok(Expr::Assign(name, Box::new(value))),
-            _ => Err(errors::user(
-                &format!("Expected a variable identifier to be assigned to, but got {:?} instead at {}.", expr, equals),
-                "Make sure that you provide the name of a variable to assign to."
-            )),
+            match expr {
+                Expr::Var(name) => Ok(Expr::Assign(name, Box::new(value))),
+                _ => Err(errors::user(
+                    &format!("Expected a variable identifier to be assigned to, but got {:?} instead at {}.", expr, equals),
+                    "Make sure that you provide the name of a variable to assign to."
+                )),
+            }
+         } else {
+            Ok(expr)
         }
     });
 
@@ -284,20 +292,7 @@ impl Parser {
             },
             Some(Token::LeftParen(_)) => {
                 let expr = Self::expression(tokens)?;
-                match tokens.next() {
-                    Some(Token::RightParen(_)) => Ok(Expr::Grouping(Box::new(expr))),
-                    Some(right) => {
-                        Self::synchronize(tokens);
-                        Err(errors::user(
-                            &format!("Expected a closing parenthesis after the expression, but got a {} instead.", right),
-                            "Make sure you have provided a closing parenthesis at the end of your expression."))
-                    },
-                    None => {
-                        Err(errors::user(
-                            "Expected a closing parenthesis after the expression, but reached the end of the file instead.",
-                            "Make sure you have provided a closing parenthesis at the end of your expression."))
-                    }
-                }
+                rd_consume!(tokens, RightParen => Ok(Expr::Grouping(Box::new(expr))), "Expected a closing parenthesis `)` after the expression", "Make sure you have a closing parenthesis `)` after the expression.")
             },
             Some(var @ Token::Identifier(..)) => {
                 Ok(Expr::Var(var))
