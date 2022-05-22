@@ -195,18 +195,65 @@ impl Parser {
         
         let then_branch = Self::statement(tokens)?;
 
-        Ok(Stmt::If(condition, Box::new(then_branch), match tokens.peek() {
-            Some(Token::Else(_)) => {
-                tokens.next();
+        Ok(Stmt::If(
+            condition,
+            Box::new(then_branch),
+            if rd_matches!(tokens, Else).is_some() {
                 let else_branch = Self::statement(tokens)?;
                  Some(Box::new(else_branch))
-            },
-            _ => None,
-        }))
+            } else {
+                None
+            }
+        ))
     });
 
     rd_term!(for_statement := tokens => Stmt : {
-        todo!()
+        rd_consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `for` keyword", "Make sure you have an opening parenthesis `(` after the `for` keyword.");
+
+        let init = match tokens.peek() {
+            Some(Token::Semicolon(_)) => {
+                tokens.next();
+                None
+            },
+            Some(Token::Var(_)) => {
+                Some(Self::declaration(tokens)?)
+            },
+            _ => {
+                let expr = Stmt::Expression(Self::expression(tokens)?);
+                rd_consume!(tokens, Semicolon, "Expected a semicolon after the initializer", "Make sure you have a semicolon after the initializer.");
+                Some(expr)
+            }
+        };
+
+        let cond = if rd_matches!(tokens, Semicolon).is_some() {
+            None
+        } else {
+            let cond = Self::expression(tokens)?;
+            rd_consume!(tokens, Semicolon, "Expected a semicolon after the condition", "Make sure you have a semicolon after the condition.");
+            Some(cond)
+        };
+
+        let incr = if rd_matches!(tokens, RightParen).is_some() {
+            None
+        } else {
+            let incr = Self::expression(tokens)?;
+            rd_consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `for` keyword's condition", "Make sure you have a closing parenthesis `)` after the `for` keyword's condition.");
+            Some(incr)
+        };
+
+        let mut body = Self::statement(tokens)?;
+
+        if let Some(incr) = incr {
+            body = Stmt::Block(vec![body, Stmt::Expression(incr)]);
+        }
+
+        body = Stmt::While(cond.unwrap_or(Expr::Literal(Literal::Bool(true))), Box::new(body));
+
+        if let Some(init) = init {
+            body = Stmt::Block(vec![init, body]);
+        }
+
+        Ok(body)
     });
 
     rd_term!(while_statement := tokens => Stmt : {
@@ -379,6 +426,11 @@ mod tests {
     }
 
     #[test]
+    fn parse_var_def() {
+        test_parse("var a = 10;", "(var a 10)");
+    }
+
+    #[test]
     fn parse_if() {
         test_parse("if (x > 5) { 10; } else { 20; }", "(if (> x 5) (block (10)) (block (20)))");
     }
@@ -386,5 +438,10 @@ mod tests {
     #[test]
     fn parse_while() {
         test_parse("while (x > 5) { 10; }", "(while (> x 5) (block (10)))");
+    }
+
+    #[test]
+    fn parse_for() {
+        test_parse("for (var i = 0; i < 10; i = i + 1) { 10; }", "(block (var i 0) (while (< i 10) (block (block (10)) ((= i (+ i 1))))))");
     }
 }

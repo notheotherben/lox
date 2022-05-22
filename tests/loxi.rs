@@ -40,3 +40,8 @@ fn block_scoping() {
 fn if_conditionals() {
     run_file("tests/data/if_conditionals.lox").expect("no errors");
 }
+
+#[test]
+fn fib() {
+    run_file("tests/data/fib.lox").expect("no errors");
+}
