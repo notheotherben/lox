@@ -7,6 +7,15 @@ impl ExprVisitor<String> for AstPrinter {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
+    fn visit_call<'a>(&mut self, callee: Expr<'a>, args: Vec<Expr<'a>>, _close: crate::lexer::Token<'a>) -> String {
+        let mut s = format!("call {}", self.visit_expr(callee));
+        for arg in args {
+            s.push(' ');
+            s.push_str(&self.visit_expr(arg));
+        }
+        s
+    }
+
     fn visit_grouping(&mut self, expr: Expr<'_>) -> String {
         format!("(group {})", self.visit_expr(expr))
     }
@@ -16,7 +25,7 @@ impl ExprVisitor<String> for AstPrinter {
             Literal::Nil => "nil".to_string(),
             Literal::Bool(b) => b.to_string(),
             Literal::Number(num) => format!("{}", num),
-            Literal::String(string) => format!("\"{}\"", string)
+            Literal::String(string) => format!("\"{}\"", string),
         }
     }
 

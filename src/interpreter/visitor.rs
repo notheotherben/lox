@@ -1,78 +1,62 @@
-use std::{rc::Rc, sync::RwLock};
+use std::rc::Rc;
 
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt}, LoxError, lexer::Token, errors};
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::Token, errors};
 
-use super::env::Environment;
+use super::{env::Environment, Value, Interpreter};
 
-#[derive(Default, Debug, Clone)]
-pub struct Interpreter{
-    env: Rc<RwLock<Environment>>,
-    breaking: bool,
-}
-
-impl Interpreter {
-    pub fn interpret(&mut self, stmts: Vec<Stmt<'_>>) -> Result<(), LoxError> {
-        for stmt in stmts {
-            self.visit_stmt(stmt)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
-    fn visit_binary<'a>(&mut self, left: crate::ast::Expr<'a>, op: crate::lexer::Token<'a>, right: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
+impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
+    fn visit_binary<'a>(&mut self, left: crate::ast::Expr<'a>, op: crate::lexer::Token<'a>, right: crate::ast::Expr<'a>) -> Result<Value, LoxError> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
         match op {
             Token::BangEqual(_) => {
                 Ok(if left != right {
-                    Literal::Bool(true)
+                    Value::Bool(true)
                 } else {
-                    Literal::Bool(false)
+                    Value::Bool(false)
                 })
             },
             Token::EqualEqual(_) => {
                 Ok(if left == right {
-                    Literal::Bool(true)
+                    Value::Bool(true)
                 } else {
-                    Literal::Bool(false)
+                    Value::Bool(false)
                 })
             },
             Token::Greater(_) => {
                 Ok(if left > right {
-                    Literal::Bool(true)
+                    Value::Bool(true)
                 } else {
-                    Literal::Bool(false)
+                    Value::Bool(false)
                 })
             },
             Token::Less(_) => {
                 Ok(if left < right {
-                    Literal::Bool(true)
+                    Value::Bool(true)
                 } else {
-                    Literal::Bool(false)
+                    Value::Bool(false)
                 })
             },
             Token::GreaterEqual(_) => {
                 Ok(if left >= right {
-                    Literal::Bool(true)
+                    Value::Bool(true)
                 } else {
-                    Literal::Bool(false)
+                    Value::Bool(false)
                 })
             },
             Token::LessEqual(_) => {
                 Ok(if left <= right {
-                    Literal::Bool(true)
+                    Value::Bool(true)
                 } else {
-                    Literal::Bool(false)
+                    Value::Bool(false)
                 })
             },
             Token::Plus(_) => {
                 match (left, right) {
-                    (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left + right)),
-                    (Literal::String(left), Literal::String(right)) => Ok(Literal::String(left + &right)),
-                    (Literal::String(left), right) => Ok(Literal::String(format!("{}{}", left, right))),
-                    (left, Literal::String(right)) => Ok(Literal::String(format!("{}{}", left, right))),
+                    (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left + right)),
+                    (Value::String(left), Value::String(right)) => Ok(Value::String(left + &right)),
+                    (Value::String(left), right) => Ok(Value::String(format!("{}{}", left, right))),
+                    (left, Value::String(right)) => Ok(Value::String(format!("{}{}", left, right))),
                     (left, right) => Err(errors::user(
                         &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide either numbers or strings on both the left and right hand sides of the multiplication operator."
@@ -81,7 +65,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
             },
             Token::Minus(_) => {
                 match (left, right) {
-                    (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left - right)),
+                    (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left - right)),
                     (left, right) => Err(errors::user(
                         &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide numbers on both the left and right hand sides of the subtraction operator.",
@@ -90,7 +74,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
             },
             Token::Slash(_) => {
                 match (left, right) {
-                    (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left / right)),
+                    (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left / right)),
                     (left, right) => Err(errors::user(
                         &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide numbers on both the left and right hand sides of the division operator.",
@@ -99,7 +83,7 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
             },
             Token::Star(_) => {
                 match (left, right) {
-                    (Literal::Number(left), Literal::Number(right)) => Ok(Literal::Number(left * right)),
+                    (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left * right)),
                     (left, right) => Err(errors::user(
                         &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
                         "Provide numbers on both the left and right hand sides of the multiplication operator.",
@@ -110,13 +94,38 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_unary<'a>(&mut self, op: crate::lexer::Token<'a>, expr: crate::ast::Expr<'a>) -> Result<Literal, LoxError> {
+    fn visit_call<'a>(&mut self, callee: crate::ast::Expr<'a>, args: Vec<crate::ast::Expr<'a>>, close: Token<'a>) -> Result<Value, LoxError> {
+        match self.visit_expr(callee)? {
+            Value::Callable(fun) => {
+                if args.len() != fun.arity() {
+                    return Err(errors::user(
+                        &format!("Expected {} arguments but got {} at {}.", fun.arity(), args.len(), close.location()),
+                        "Provide the correct number of arguments to the function call."
+                    ));
+                }
+
+                let mut evaluated_args = Vec::new();
+                for arg in args {
+                    evaluated_args.push(self.visit_expr(arg)?);
+                }
+
+                fun.call(self, evaluated_args)
+            },
+            other => Err(errors::user(
+                &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
+                "Make sure that you are attempting to call a function or class object."
+            ))
+        }
+        
+    }
+
+    fn visit_unary<'a>(&mut self, op: crate::lexer::Token<'a>, expr: crate::ast::Expr<'a>) -> Result<Value, LoxError> {
         let right = self.visit_expr(expr)?;
 
         match op {
             Token::Minus(_) => {
                 match right {
-                    Literal::Number(num) => Ok(Literal::Number(-num)),
+                    Value::Number(num) => Ok(Value::Number(-num)),
                     _ => Err(errors::user(
                         &format!("Invalid operand to unary operator {}: `{:?}`", op, right),
                         "Provide a number to the unary negation operator, or remove the minus sign."
@@ -124,21 +133,21 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
                 }
             },
             Token::Bang(_) => {
-                Ok(Literal::Bool(!right.is_truthy()))
+                Ok(Value::Bool(!right.is_truthy()))
             },
             _ => panic!("We received an unexpected unary operator: {:?}", op)
         }
     }
 
-    fn visit_grouping(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_grouping(&mut self, expr: crate::ast::Expr<'_>) -> Result<Value, LoxError> {
         self.visit_expr(expr)
     }
 
-    fn visit_literal(&mut self, value: Literal) -> Result<Literal, LoxError> {
-        Ok(value)
+    fn visit_literal(&mut self, value: Literal) -> Result<Value, LoxError> {
+        Ok(value.into())
     }
 
-    fn visit_var_ref(&mut self, name: Token<'_>) -> Result<Literal, LoxError> {
+    fn visit_var_ref(&mut self, name: Token<'_>) -> Result<Value, LoxError> {
         match self.env.read().unwrap().get(name.lexeme()) {
             Some(value) => Ok(value),
             None => Err(errors::user(
@@ -148,13 +157,13 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_assign(&mut self, ident: Token<'_>, value: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_assign(&mut self, ident: Token<'_>, value: crate::ast::Expr<'_>) -> Result<Value, LoxError> {
         let value = self.visit_expr(value)?;
         self.env.write().unwrap().assign(ident.lexeme(), value.clone())?;
         Ok(value)
     }
 
-    fn visit_logical(&mut self, left: crate::ast::Expr<'_>, op: Token<'_>, right: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_logical(&mut self, left: crate::ast::Expr<'_>, op: Token<'_>, right: crate::ast::Expr<'_>) -> Result<Value, LoxError> {
         let left = self.visit_expr(left)?;
 
         match op {
@@ -167,35 +176,35 @@ impl ExprVisitor<Result<Literal, LoxError>> for Interpreter {
     
 }
 
-impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
-    fn visit_print(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
+    fn visit_print(&mut self, expr: crate::ast::Expr<'_>) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
         println!("{}", value);
-        Ok(Literal::Nil)
+        Ok(Value::Nil)
     }
 
-    fn visit_break(&mut self) -> Result<Literal, LoxError> {
+    fn visit_break(&mut self) -> Result<Value, LoxError> {
         self.breaking = true;
-        Ok(Literal::Nil)
+        Ok(Value::Nil)
     }
 
-    fn visit_stmt_expr(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_stmt_expr(&mut self, expr: crate::ast::Expr<'_>) -> Result<Value, LoxError> {
         self.visit_expr(expr)?;
 
-        Ok(Literal::Nil)
+        Ok(Value::Nil)
     }
 
-    fn visit_var_def(&mut self, name: Token<'_>, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
+    fn visit_var_def(&mut self, name: Token<'_>, expr: crate::ast::Expr<'_>) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
         self.env.write().unwrap().define(name.lexeme(), value);
-        Ok(Literal::Nil)
+        Ok(Value::Nil)
     }
 
-    fn visit_block(&mut self, stmts: Vec<crate::ast::Stmt<'_>>) -> Result<Literal, LoxError> {
+    fn visit_block(&mut self, stmts: Vec<crate::ast::Stmt<'_>>) -> Result<Value, LoxError> {
         let parent = Rc::clone(&self.env);
         self.env = Environment::child(Rc::clone(&parent));
 
-        let mut result = Ok(Literal::Nil);
+        let mut result = Ok(Value::Nil);
 
         for stmt in stmts {
             if self.breaking {
@@ -212,7 +221,7 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
         result
     }
 
-    fn visit_if(&mut self, cond: crate::ast::Expr<'_>, then_branch: crate::ast::Stmt<'_>, else_branch: Option<crate::ast::Stmt<'_>>) -> Result<Literal, LoxError> {
+    fn visit_if(&mut self, cond: crate::ast::Expr<'_>, then_branch: crate::ast::Stmt<'_>, else_branch: Option<crate::ast::Stmt<'_>>) -> Result<Value, LoxError> {
         let cond = self.visit_expr(cond)?;
 
         if cond.is_truthy() {
@@ -220,11 +229,11 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
         } else if let Some(else_branch) = else_branch {
             self.visit_stmt(else_branch)
         } else {
-            Ok(Literal::Nil)
+            Ok(Value::Nil)
         }
     }
 
-    fn visit_while(&mut self, cond: crate::ast::Expr<'_>, body: crate::ast::Stmt<'_>) -> Result<Literal, LoxError> {
+    fn visit_while(&mut self, cond: crate::ast::Expr<'_>, body: crate::ast::Stmt<'_>) -> Result<Value, LoxError> {
         // TODO: Figure out how to avoid the need to clone cond/body here
         let mut cont = self.visit_expr(cond.clone())?;
         while cont.is_truthy() && !self.breaking {
@@ -234,7 +243,7 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
         }
 
         self.breaking = false;
-        Ok(Literal::Nil)
+        Ok(Value::Nil)
     }
 }
 
@@ -251,6 +260,6 @@ mod tests {
 
         let mut interpreter = Interpreter::default();
         let result = interpreter.visit_expr(tree).expect("no errors");
-        assert_eq!(result, Literal::Number(8.0));
+        assert_eq!(result, Value::Number(8.0));
     }
 }

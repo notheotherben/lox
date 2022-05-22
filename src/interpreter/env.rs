@@ -1,10 +1,12 @@
 use std::{collections::HashMap, rc::Rc, sync::RwLock};
 
-use crate::{ast::Literal, errors, LoxError};
+use crate::{errors, LoxError};
+
+use super::Value;
 
 #[derive(Debug, Clone, Default)]
 pub struct Environment {
-    values: HashMap<String, Literal>,
+    values: HashMap<String, Value>,
     enclosing: Option<Rc<RwLock<Environment>>>,
 }
 
@@ -13,11 +15,11 @@ impl Environment {
         Rc::new(RwLock::new(Self { enclosing: Some(parent), ..Default::default() }))
     }
 
-    pub fn define<K: Into<String>>(&mut self, key: K, value: Literal) {
+    pub fn define<K: Into<String>>(&mut self, key: K, value: Value) {
         self.values.insert(key.into(), value);
     }
 
-    pub fn assign<K: Into<String>>(&mut self, key: K, value: Literal) -> Result<(), LoxError> {
+    pub fn assign<K: Into<String>>(&mut self, key: K, value: Value) -> Result<(), LoxError> {
         let key = key.into();
         if let std::collections::hash_map::Entry::Occupied(mut e) = self.values.entry(key.clone()) {
             e.insert(value);
@@ -32,7 +34,7 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<Literal> {
+    pub fn get(&self, key: &str) -> Option<Value> {
         self.values.get(key).cloned().or_else(|| self.enclosing.as_ref().and_then(|e| e.read().unwrap().get(key)))
     }
 }
@@ -44,32 +46,32 @@ mod tests {
     #[test]
     fn test_global() {
         let mut env = Environment::default();
-        env.define("a", Literal::Number(1.0));
-        env.define("b", Literal::Number(2.0));
+        env.define("a", Value::Number(1.0));
+        env.define("b", Value::Number(2.0));
 
-        assert_eq!(env.get("a"), Some(Literal::Number(1.0)));
-        assert_eq!(env.get("b"), Some(Literal::Number(2.0)));
+        assert_eq!(env.get("a"), Some(Value::Number(1.0)));
+        assert_eq!(env.get("b"), Some(Value::Number(2.0)));
         assert_eq!(env.get("c"), None);
     }
 
     #[test]
     fn test_scoped() {
         let global = Rc::new(RwLock::new(Environment::default()));
-        global.write().unwrap().define("a", Literal::Number(1.0));
-        global.write().unwrap().define("b", Literal::Number(2.0));
+        global.write().unwrap().define("a", Value::Number(1.0));
+        global.write().unwrap().define("b", Value::Number(2.0));
 
         let env = Environment::child(Rc::clone(&global));
-        assert_eq!(env.read().unwrap().get("a"), Some(Literal::Number(1.0)));
+        assert_eq!(env.read().unwrap().get("a"), Some(Value::Number(1.0)));
 
-        env.write().unwrap().define("a", Literal::Number(3.0));
-        env.write().unwrap().define("c", Literal::Number(4.0));
+        env.write().unwrap().define("a", Value::Number(3.0));
+        env.write().unwrap().define("c", Value::Number(4.0));
 
-        assert_eq!(global.read().unwrap().get("a"), Some(Literal::Number(1.0)));
+        assert_eq!(global.read().unwrap().get("a"), Some(Value::Number(1.0)));
 
 
-        assert_eq!(env.read().unwrap().get("a"), Some(Literal::Number(3.0)));
-        assert_eq!(env.read().unwrap().get("b"), Some(Literal::Number(2.0)));
-        assert_eq!(env.read().unwrap().get("c"), Some(Literal::Number(4.0)));
+        assert_eq!(env.read().unwrap().get("a"), Some(Value::Number(3.0)));
+        assert_eq!(env.read().unwrap().get("b"), Some(Value::Number(2.0)));
+        assert_eq!(env.read().unwrap().get("c"), Some(Value::Number(4.0)));
         assert_eq!(env.read().unwrap().get("d"), None);
     }
 }

@@ -6,6 +6,7 @@ use super::Literal;
 pub enum Expr<'a> {
     Assign(Token<'a>, Box<Expr<'a>>),
     Binary(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
+    Call(Box<Expr<'a>>, Vec<Expr<'a>>, Token<'a>),
     Grouping(Box<Expr<'a>>),
     Literal(Literal),
     Logical(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
@@ -21,6 +22,9 @@ pub trait ExprVisitor<T> {
             },
             Expr::Binary(left, op, right) => {
                 self.visit_binary(*left, op, *right)
+            },
+            Expr::Call(callee, args, close) => {
+                self.visit_call(*callee, args, close)
             },
             Expr::Grouping(expr) => {
                 self.visit_grouping(*expr)
@@ -43,6 +47,8 @@ pub trait ExprVisitor<T> {
     fn visit_assign(&mut self, ident: Token<'_>, value: Expr<'_>) -> T;
 
     fn visit_binary<'a>(&mut self, left: Expr<'a>, op: Token<'a>, right: Expr<'a>) -> T;
+
+    fn visit_call<'a>(&mut self, callee: Expr<'a>, args: Vec<Expr<'a>>, close: Token<'a>) -> T;
 
     fn visit_grouping(&mut self, expr: Expr<'_>) -> T;
 

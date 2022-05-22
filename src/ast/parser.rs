@@ -4,44 +4,68 @@ use crate::{errors, lexer::Token, LoxError};
 
 use super::{Expr, Literal, Stmt};
 
-#[derive(Default, Debug)]
-pub struct Parser {
+pub struct Parser {}
+
+struct ParseContext<'a, I: Iterator<Item = Token<'a>>> {
+    tokens: Peekable<I>,
     loop_depth: usize,
 }
 
 // Macros which make it easier to implement certain common parts of the parser.
 macro_rules! rd_term {
-    ($name:ident($self:ident) := $token_id:ident => Vec<Stmt> : $body:expr) => {
-        rd_term!($name($self) := $token_id => Vec<Stmt<'a>> : $body);
+    ($name:ident($context:ident) :=> Vec<Stmt> : $body:expr) => {
+        rd_term!($name($context) :=> Vec<Stmt<'a>> : $body);
     };
 
-    ($name:ident($self:ident) := $token_id:ident => Stmt : $body:expr) => {
-        rd_term!($name($self) := $token_id => Stmt<'a> : $body);
+    ($name:ident($context:ident) :=> Vec<Expr> : $body:expr) => {
+        rd_term!($name($context) :=> Vec<Expr<'a>> : $body);
     };
 
-    ($name:ident($self:ident) := $token_id:ident => Expr : $body:expr) => {
-        rd_term!($name($self) := $token_id => Expr<'a> : $body);
+    ($name:ident($context:ident) :=> Stmt : $body:expr) => {
+        rd_term!($name($context) :=> Stmt<'a> : $body);
     };
 
-    ($name:ident($self:ident) := $token_id:ident => $ret:ty : $body:expr) => {
+    ($name:ident($context:ident) :=> Expr : $body:expr) => {
+        rd_term!($name($context) :=> Expr<'a> : $body);
+    };
+
+    ($name:ident($context:ident) :=> $ret:ty : $body:expr) => {
         fn $name<'a, T: Iterator<Item = Token<'a>>>(
-            &mut $self,
-            $token_id: &mut Peekable<T>,
+            $context: &mut ParseContext<'a, T>,
         ) -> Result<$ret, LoxError> {
             $body
         }
     };
 
-    ($name:ident($self:ident) := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
-        rd_term!($name($self) := tokens => Expr : {
-            let left = $self.$left(tokens)?;
+    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => Vec<$ret:ty>) => {
+        rd_term!($name(context) :=> Vec<$ret> : {
+            let mut items = vec![Self::$left(context)?];
     
-            if !matches!(tokens.peek(), Some($(Token::$token(..))|+)) {
+            while matches!(context.tokens.peek(), Some($(Token::$token(..))|+)) {
+                context.tokens.next();
+                match Self::$right(context) {
+                    Ok(item) => items.push(item),
+                    Err(err) => {
+                        Self::synchronize(context);
+                        return Err(err);
+                    }
+                }
+            }
+
+            Ok(items)
+        });
+    };
+
+    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
+        rd_term!($name(context) :=> Expr : {
+            let left = Self::$left(context)?;
+    
+            if !matches!(context.tokens.peek(), Some($(Token::$token(..))|+)) {
                 return Ok(left)
             }
     
-            let op = tokens.next().unwrap();
-            let right = $self.$right(tokens)?;
+            let op = context.tokens.next().unwrap();
+            let right = Self::$right(context)?;
             Ok(Expr::Binary(
                 Box::new(left),
                 op,
@@ -50,23 +74,23 @@ macro_rules! rd_term {
         });
     };
 
-    ($name:ident($self:ident) := ($($token:ident)|+ $right:ident) | $fallback:ident => unary) => {
-        rd_term!($name($self) := tokens => Expr : {
-            if !matches!(tokens.peek(), Some($(Token::$token(_))|+)) {
-                return $self.$fallback(tokens);
+    ($name:ident := ($($token:ident)|+ $right:ident) | $fallback:ident => unary) => {
+        rd_term!($name(context) :=> Expr : {
+            if !matches!(context.tokens.peek(), Some($(Token::$token(_))|+)) {
+                return Self::$fallback(context);
             };
     
-            let op = tokens.next().unwrap();
-            let right = $self.$right(tokens)?;
+            let op = context.tokens.next().unwrap();
+            let right = Self::$right(context)?;
             Ok(Expr::Unary(op, Box::new(right)))
         });
     };
 }
 
 macro_rules! rd_matches {
-    ($tokens:ident, $($token:ident)|+) => {
-        if matches!($tokens.peek(), Some($(Token::$token(..))|+)) {
-            Some($tokens.next().unwrap())
+    ($context:ident, $($token:ident)|+) => {
+        if matches!($context.tokens.peek(), Some($(Token::$token(..))|+)) {
+            Some($context.tokens.next().unwrap())
         } else {
             None
         }
@@ -74,8 +98,8 @@ macro_rules! rd_matches {
 }
 
 macro_rules! rd_consume {
-    ($tokens:ident, $($id:ident@$token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
-        match $tokens.next() {
+    ($context:ident, $($id:ident@$token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
+        match $context.tokens.next() {
             Some($($id@Token::$token(..))|+) => $ok,
             Some(close_paren) => return Err(errors::user(
                 &format!("{}, but got {} instead.", $msg, close_paren),
@@ -88,8 +112,8 @@ macro_rules! rd_consume {
         }
     };
 
-    ($tokens:ident, $($token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
-        match $tokens.next() {
+    ($context:ident, $($token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
+        match $context.tokens.next() {
             Some($(Token::$token(..))|+) => $ok,
             Some(close_paren) => return Err(errors::user(
                 &format!("{}, but got {} instead.", $msg, close_paren),
@@ -102,8 +126,8 @@ macro_rules! rd_consume {
         }
     };
 
-    ($tokens:ident, $($token:ident)|+, $msg:expr, $advice:expr) => {
-        rd_consume!($tokens, $($token)|+ => {}, $msg, $advice)
+    ($context:ident, $($token:ident)|+, $msg:expr, $advice:expr) => {
+        rd_consume!($context, $($token)|+ => {}, $msg, $advice)
     };
 }
 
@@ -111,16 +135,19 @@ impl Parser {
     pub fn parse<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut T,
     ) -> (Vec<Stmt<'a>>, Vec<LoxError>) {
-        let mut parser = Self::default();
-        let mut tokens = tokens.peekable();
+        let mut context = ParseContext {
+            tokens: tokens.peekable(),
+            loop_depth: 0,
+        };
+
         let mut stmts = Vec::new();
         let mut errs = Vec::new();
 
-        while tokens.peek().is_some() {
-            match parser.declaration(&mut tokens) {
+        while context.tokens.peek().is_some() {
+            match Self::declaration(&mut context) {
                 Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
-                    parser.synchronize(&mut tokens);
+                    Self::synchronize(&mut context);
                     errs.push(err);
                 },
             }
@@ -132,26 +159,28 @@ impl Parser {
     pub fn parse_expr<'a, T: Iterator<Item = Token<'a>>>(
         tokens: &mut T,
     ) -> Result<Expr<'a>, LoxError> {
-        let mut parser = Self::default();
-        let mut tokens = tokens.peekable();
-        parser.expression(&mut tokens)
+        let mut context = ParseContext {
+            tokens: tokens.peekable(),
+            loop_depth: 1
+        };
+        Self::expression(&mut context)
     }
 
-    rd_term!(declaration(self) := tokens => Stmt : {
-        if rd_matches!(tokens, Var).is_none() {
-            return self.statement(tokens);
+    rd_term!(declaration(context) :=> Stmt : {
+        if rd_matches!(context, Var).is_none() {
+            return Self::statement(context);
         }
 
-        rd_consume!(tokens, ident@Identifier => {
-            let init = if let Some(Token::Equal(_)) = tokens.peek() {
-                tokens.next();
-                self.expression(tokens)?
+        rd_consume!(context, ident@Identifier => {
+            let init = if let Some(Token::Equal(_)) = context.tokens.peek() {
+                context.tokens.next();
+                Self::expression(context)?
             } else {
                 Expr::Literal(Literal::Nil)
             };
 
             rd_consume!(
-                tokens,
+                context,
                 Semicolon => Ok(Stmt::Var(ident, init)),
                 "Expected ';' after variable declaration",
                 "Make sure that you have a semicolon after the variable declaration.")
@@ -160,34 +189,34 @@ impl Parser {
             "Provide a variable name after the `var` keyword.")
     });
 
-    rd_term!(statement(self) := tokens => Stmt : {
-        let stmt = match tokens.peek() {
+    rd_term!(statement(context) :=> Stmt : {
+        let stmt = match context.tokens.peek() {
             Some(Token::For(_)) => {
-                tokens.next();
-                self.loop_depth += 1;
-                let stmt = self.for_statement(tokens);
-                self.loop_depth -= 1;
+                context.tokens.next();
+                context.loop_depth += 1;
+                let stmt = Self::for_statement(context);
+                context.loop_depth -= 1;
                 return stmt
             },
             Some(Token::If(_)) => {
-                tokens.next();
-                return self.if_statement(tokens)
+                context.tokens.next();
+                return Self::if_statement(context)
             },
             Some(Token::LeftBrace(_)) => {
-                tokens.next();
-                return Ok(Stmt::Block(self.block(tokens)?))
+                context.tokens.next();
+                return Ok(Stmt::Block(Self::block(context)?))
             },
             Some(Token::While(_)) => {
-                tokens.next();
-                self.loop_depth += 1;
-                let stmt = self.while_statement(tokens);
-                self.loop_depth -= 1;
+                context.tokens.next();
+                context.loop_depth += 1;
+                let stmt = Self::while_statement(context);
+                context.loop_depth -= 1;
                 return stmt
             },
             Some(Token::Break(_)) => {
-                tokens.next();
+                context.tokens.next();
 
-                if self.loop_depth == 0 {
+                if context.loop_depth == 0 {
                     return Err(errors::user(
                         "Cannot use 'break' outside of a loop.",
                         "Make sure that you are within the bounds of a `while` or `for` loop when using the `break` keyword."
@@ -197,33 +226,33 @@ impl Parser {
                 Stmt::Break
             },
             Some(Token::Print(_)) => {
-                tokens.next();
-                let expr = self.expression(tokens)?;
+                context.tokens.next();
+                let expr = Self::expression(context)?;
                 Stmt::Print(expr)
             },
             _ => {
-                let expr = self.expression(tokens)?;
+                let expr = Self::expression(context)?;
                 Stmt::Expression(expr)
             }
         };
 
-        rd_consume!(tokens, Semicolon => Ok(stmt), "Expected ';' after expression", "Make sure that you have a semicolon at the end of your previous expression.")
+        rd_consume!(context, Semicolon => Ok(stmt), "Expected ';' after expression", "Make sure that you have a semicolon at the end of your previous expression.")
     });
 
-    rd_term!(if_statement(self) := tokens => Stmt : {
-        rd_consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `if` keyword", "Make sure you have an opening parenthesis `(` after the `if` keyword.");
+    rd_term!(if_statement(context) :=> Stmt : {
+        rd_consume!(context, LeftParen, "Expected an opening parenthesis `(` after the `if` keyword", "Make sure you have an opening parenthesis `(` after the `if` keyword.");
 
-        let condition = self.expression(tokens)?;
+        let condition = Self::expression(context)?;
 
-        rd_consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.");
+        rd_consume!(context, RightParen, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.");
         
-        let then_branch = self.statement(tokens)?;
+        let then_branch = Self::statement(context)?;
 
         Ok(Stmt::If(
             condition,
             Box::new(then_branch),
-            if rd_matches!(tokens, Else).is_some() {
-                let else_branch = self.statement(tokens)?;
+            if rd_matches!(context, Else).is_some() {
+                let else_branch = Self::statement(context)?;
                  Some(Box::new(else_branch))
             } else {
                 None
@@ -231,41 +260,41 @@ impl Parser {
         ))
     });
 
-    rd_term!(for_statement(self) := tokens => Stmt : {
-        rd_consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `for` keyword", "Make sure you have an opening parenthesis `(` after the `for` keyword.");
+    rd_term!(for_statement(context) :=> Stmt : {
+        rd_consume!(context, LeftParen, "Expected an opening parenthesis `(` after the `for` keyword", "Make sure you have an opening parenthesis `(` after the `for` keyword.");
 
-        let init = match tokens.peek() {
+        let init = match context.tokens.peek() {
             Some(Token::Semicolon(_)) => {
-                tokens.next();
+                context.tokens.next();
                 None
             },
             Some(Token::Var(_)) => {
-                Some(self.declaration(tokens)?)
+                Some(Self::declaration(context)?)
             },
             _ => {
-                let expr = Stmt::Expression(self.expression(tokens)?);
-                rd_consume!(tokens, Semicolon, "Expected a semicolon after the initializer", "Make sure you have a semicolon after the initializer.");
+                let expr = Stmt::Expression(Self::expression(context)?);
+                rd_consume!(context, Semicolon, "Expected a semicolon after the initializer", "Make sure you have a semicolon after the initializer.");
                 Some(expr)
             }
         };
 
-        let cond = if rd_matches!(tokens, Semicolon).is_some() {
+        let cond = if rd_matches!(context, Semicolon).is_some() {
             None
         } else {
-            let cond = self.expression(tokens)?;
-            rd_consume!(tokens, Semicolon, "Expected a semicolon after the condition", "Make sure you have a semicolon after the condition.");
+            let cond = Self::expression(context)?;
+            rd_consume!(context, Semicolon, "Expected a semicolon after the condition", "Make sure you have a semicolon after the condition.");
             Some(cond)
         };
 
-        let incr = if rd_matches!(tokens, RightParen).is_some() {
+        let incr = if rd_matches!(context, RightParen).is_some() {
             None
         } else {
-            let incr = self.expression(tokens)?;
-            rd_consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `for` keyword's condition", "Make sure you have a closing parenthesis `)` after the `for` keyword's condition.");
+            let incr = Self::expression(context)?;
+            rd_consume!(context, RightParen, "Expected a closing parenthesis `)` after the `for` keyword's condition", "Make sure you have a closing parenthesis `)` after the `for` keyword's condition.");
             Some(incr)
         };
 
-        let mut body = self.statement(tokens)?;
+        let mut body = Self::statement(context)?;
 
         if let Some(incr) = incr {
             body = Stmt::Block(vec![body, Stmt::Expression(incr)]);
@@ -280,42 +309,42 @@ impl Parser {
         Ok(body)
     });
 
-    rd_term!(while_statement(self) := tokens => Stmt : {
-        rd_consume!(tokens, LeftParen, "Expected an opening parenthesis `(` after the `while` keyword", "Make sure you have an opening parenthesis `(` after the `while` keyword.");
+    rd_term!(while_statement(context) :=> Stmt : {
+        rd_consume!(context, LeftParen, "Expected an opening parenthesis `(` after the `while` keyword", "Make sure you have an opening parenthesis `(` after the `while` keyword.");
 
-        let condition = self.expression(tokens)?;
+        let condition = Self::expression(context)?;
 
-        rd_consume!(tokens, RightParen, "Expected a closing parenthesis `)` after the `while` keyword's condition", "Make sure you have a closing parenthesis `)` after the `while` keyword's condition.");
+        rd_consume!(context, RightParen, "Expected a closing parenthesis `)` after the `while` keyword's condition", "Make sure you have a closing parenthesis `)` after the `while` keyword's condition.");
         
 
-        let body = self.statement(tokens)?;
+        let body = Self::statement(context)?;
 
         Ok(Stmt::While(condition, Box::new(body)))
     });
 
-    rd_term!(block(self) := tokens => Vec<Stmt> : {
+    rd_term!(block(context) :=> Vec<Stmt> : {
         let mut stmts = Vec::new();
 
-        while !matches!(tokens.peek(), Some(Token::RightBrace(_)) | None) {
-            match self.declaration(tokens) {
+        while !matches!(context.tokens.peek(), Some(Token::RightBrace(_)) | None) {
+            match Self::declaration(context) {
                 Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
-                    self.synchronize(tokens);
+                    Self::synchronize(context);
                     return Err(err)
                 },
             }
         }
 
-        rd_consume!(tokens, RightBrace => Ok(stmts), "Expected a closing brace `}` after the block", "Make sure you have a closing brace `}` after the block.")
+        rd_consume!(context, RightBrace => Ok(stmts), "Expected a closing brace `}` after the block", "Make sure you have a closing brace `}` after the block.")
     });
 
-    rd_term!(expression(self) := tokens => Expr : self.assignment(tokens));
+    rd_term!(expression(context) :=> Expr : Self::assignment(context));
 
-    rd_term!(assignment(self) := tokens => Expr : {
-        let expr = self.or(tokens)?;
+    rd_term!(assignment(context) :=> Expr : {
+        let expr = Self::or(context)?;
 
-        if let Some(equals) = rd_matches!(tokens, Equal) {
-            let value = self.assignment(tokens)?;
+        if let Some(equals) = rd_matches!(context, Equal) {
+            let value = Self::assignment(context)?;
 
             match expr {
                 Expr::Var(name) => Ok(Expr::Assign(name, Box::new(value))),
@@ -329,22 +358,69 @@ impl Parser {
         }
     });
 
-    rd_term!(or(self) := and (Or and)* => binary);
+    rd_term!(or := and (Or and)* => binary);
 
-    rd_term!(and(self) := equality (And equality)* => binary);
+    rd_term!(and := equality (And equality)* => binary);
 
-    rd_term!(equality(self) := comparison (BangEqual|EqualEqual equality)* => binary);
+    rd_term!(equality := comparison (BangEqual|EqualEqual equality)* => binary);
 
-    rd_term!(comparison(self) := term (Greater | GreaterEqual | Less | LessEqual equality)* => binary);
+    rd_term!(comparison := term (Greater | GreaterEqual | Less | LessEqual equality)* => binary);
 
-    rd_term!(term(self) := factor (Minus | Plus equality)* => binary);
+    rd_term!(term := factor (Minus | Plus equality)* => binary);
 
-    rd_term!(factor(self) := unary (Star | Slash equality)* => binary);
+    rd_term!(factor := unary (Star | Slash equality)* => binary);
 
-    rd_term!(unary(self) := (Bang|Minus term)| primary => unary);
+    rd_term!(unary := (Bang|Minus term)| call => unary);
 
-    rd_term!(primary(self) := tokens => Expr : {
-        match tokens.next() {
+    rd_term!(call(context) :=> Expr : {
+        let mut expr = Self::primary(context)?;
+
+        while matches!(context.tokens.peek(), Some(Token::LeftParen(_))) {
+            context.tokens.next();
+            let args = Self::arguments(context)?;
+
+            let call = rd_consume!(context, call@RightParen => call, "Expected a closing parenthesis `)` after the function call's arguments", "Make sure you have a closing parenthesis `)` after the function call's arguments.");
+
+            if args.len() >= 255 {
+                return Err(errors::user(
+                    &format!("Found {} arguments in function call at {}, which is more than the 255 argument limit.", args.len(), call),
+                    "Make sure that you don't have more than 255 arguments in a function call and try refactoring your code to accept an array or object of arguments."
+                ))
+            }
+
+            expr = Expr::Call(Box::new(expr), args, call);
+        }
+
+        Ok(expr)
+    });
+
+    rd_term!(arguments(context) :=> Vec<Expr> : {
+        let mut items = Vec::new();
+
+        if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
+            return Ok(items)
+        }
+
+        loop {
+            match Self::expression(context) {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    Self::synchronize(context);
+                    return Err(err);
+                }
+            }
+
+            if rd_matches!(context, Comma).is_none() {
+                break;
+            }
+        }
+        
+        Ok(items)
+    });
+
+
+    rd_term!(primary(context) :=> Expr : {
+        match context.tokens.next() {
             Some(Token::False(_)) => Ok(Expr::Literal(Literal::Bool(false))),
             Some(Token::True(_)) => Ok(Expr::Literal(Literal::Bool(true))),
             Some(Token::Nil(_)) => Ok(Expr::Literal(Literal::Nil)),
@@ -362,14 +438,14 @@ impl Parser {
                 Ok(Expr::Literal(Literal::String(value)))
             },
             Some(Token::LeftParen(_)) => {
-                let expr = self.expression(tokens)?;
-                rd_consume!(tokens, RightParen => Ok(Expr::Grouping(Box::new(expr))), "Expected a closing parenthesis `)` after the expression", "Make sure you have a closing parenthesis `)` after the expression.")
+                let expr = Self::expression(context)?;
+                rd_consume!(context, RightParen => Ok(Expr::Grouping(Box::new(expr))), "Expected a closing parenthesis `)` after the expression", "Make sure you have a closing parenthesis `)` after the expression.")
             },
             Some(var @ Token::Identifier(..)) => {
                 Ok(Expr::Var(var))
             },
             Some(t) => {
-                self.synchronize(tokens);
+                Self::synchronize(context);
 
                 Err(errors::user(
                     &format!("Encountered an unexpected {:?} token while waiting for one of ['true', 'false', 'nil', number, string, '('].", t),
@@ -383,11 +459,10 @@ impl Parser {
     });
 
     fn synchronize<'a, T: Iterator<Item = Token<'a>>>(
-        &mut self,
-        tokens: &mut Peekable<T>
+        context: &mut ParseContext<'a, T>
     ) {
-        while let Some(token) = tokens.next() {
-            match (token, tokens.peek()) {
+        while let Some(token) = context.tokens.next() {
+            match (token, context.tokens.peek()) {
                 // If we reach a semicolon, we can stop because the next token will be the start of a new statement
                 (Token::Semicolon(_), _) => break,
                 // If the next token is the start of a new statement, we can stop
@@ -432,7 +507,10 @@ mod tests {
     fn test_parse(source: &str, expected: &str) {
         let lexer = Scanner::new(source);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
-        assert!(errs.is_empty(), "no errors should be returned");
+
+        for err in errs {
+            panic!("{}", err);
+        }
 
         assert_eq!(
             AstPrinter {}.visit_stmt(tree.first().unwrap().clone()),
@@ -484,5 +562,11 @@ mod tests {
     fn parse_break() {
         test_parse("while (true) { break; }", "(while true (block break))");
         test_parse_err("if (true) { break; }");
+    }
+
+    #[test]
+    fn parse_function_call() {
+        test_parse("clock();", "(call clock)");
+        test_parse("f(1, 2, 3);", "(call f 1 2 3)");
     }
 }
