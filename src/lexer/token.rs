@@ -30,6 +30,7 @@ pub enum Token<'a> {
     Number(Location, &'a str),
 
     And(Location),
+    Break(Location),
     Class(Location),
     Else(Location),
     False(Location),
@@ -76,6 +77,7 @@ impl<'a> Token<'a> {
             Token::Number(loc, _) => *loc,
 
             Token::And(loc) => *loc,
+            Token::Break(loc) => *loc,
             Token::Class(loc) => *loc,
             Token::Else(loc) => *loc,
             Token::False(loc) => *loc,
@@ -122,6 +124,7 @@ impl<'a> Token<'a> {
             Token::Number(_, l) => l,
 
             Token::And(..) => "and",
+            Token::Break(..) => "break",
             Token::Class(..) => "class",
             Token::Else(..) => "else",
             Token::False(..) => "false",

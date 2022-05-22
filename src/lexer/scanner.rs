@@ -197,6 +197,7 @@ impl<'a> Scanner<'a> {
 
         match lexeme {
             "and" => Ok(Token::And(location)),
+            "break" => Ok(Token::Break(location)),
             "class" => Ok(Token::Class(location)),
             "else" => Ok(Token::Else(location)),
             "false" => Ok(Token::False(location)),

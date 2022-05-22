@@ -7,6 +7,7 @@ use super::env::Environment;
 #[derive(Default, Debug, Clone)]
 pub struct Interpreter{
     env: Rc<RwLock<Environment>>,
+    breaking: bool,
 }
 
 impl Interpreter {
@@ -173,6 +174,11 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
         Ok(Literal::Nil)
     }
 
+    fn visit_break(&mut self) -> Result<Literal, LoxError> {
+        self.breaking = true;
+        Ok(Literal::Nil)
+    }
+
     fn visit_stmt_expr(&mut self, expr: crate::ast::Expr<'_>) -> Result<Literal, LoxError> {
         self.visit_expr(expr)?;
 
@@ -192,6 +198,10 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
         let mut result = Ok(Literal::Nil);
 
         for stmt in stmts {
+            if self.breaking {
+                break;
+            }
+
             if let Err(e) = self.visit_stmt(stmt) {
                 result = Err(e);
                 break;
@@ -217,12 +227,13 @@ impl StmtVisitor<Result<Literal, LoxError>> for Interpreter {
     fn visit_while(&mut self, cond: crate::ast::Expr<'_>, body: crate::ast::Stmt<'_>) -> Result<Literal, LoxError> {
         // TODO: Figure out how to avoid the need to clone cond/body here
         let mut cont = self.visit_expr(cond.clone())?;
-        while cont.is_truthy() {
+        while cont.is_truthy() && !self.breaking {
             self.visit_stmt(body.clone())?;
 
             cont = self.visit_expr(cond.clone())?;
         }
 
+        self.breaking = false;
         Ok(Literal::Nil)
     }
 }

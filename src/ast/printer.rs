@@ -42,6 +42,10 @@ impl StmtVisitor<String> for AstPrinter {
         format!("(print {})", self.visit_expr(expr))
     }
 
+    fn visit_break(&mut self) -> String {
+        "break".to_string()
+    }
+
     fn visit_stmt_expr(&mut self, expr: Expr<'_>) -> String {
         format!("({})", self.visit_expr(expr))
     }

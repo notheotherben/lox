@@ -5,6 +5,7 @@ use super::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt<'a> {
     Expression(Expr<'a>),
+    Break,
     Print(Expr<'a>),
     Var(Token<'a>, Expr<'a>),
     Block(Vec<Stmt<'a>>),
@@ -16,6 +17,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
     fn visit_stmt(&mut self, stmt: Stmt<'_>) -> T {
         match stmt {
             Stmt::Expression(expr) => self.visit_stmt_expr(expr),
+            Stmt::Break => self.visit_break(),
             Stmt::Print(expr) => self.visit_print(expr),
             Stmt::Var(name, expr) => self.visit_var_def(name, expr),
             Stmt::Block(stmts) => self.visit_block(stmts),
@@ -25,6 +27,8 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
     }
 
     fn visit_print(&mut self, expr: Expr<'_>) -> T;
+
+    fn visit_break(&mut self) -> T;
 
     fn visit_stmt_expr(&mut self, expr: Expr<'_>) -> T;
 
