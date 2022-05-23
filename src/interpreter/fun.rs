@@ -10,8 +10,14 @@ pub enum Fun {
 }
 
 impl Fun {
-    pub fn native<T: Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static>(arity: usize, fun: T) -> Self {
-        Fun::Native(Rc::new(NativeFun::new(arity, fun)))
+    pub fn native<T: Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static, S: Into<String>>(name: S, arity: usize, fun: T) -> Self {
+        Fun::Native(Rc::new(NativeFun::new(name, arity, fun)))
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Fun::Native(fun) => fun.name(),
+        }
     }
 
     pub fn arity(&self) -> usize {
@@ -29,7 +35,7 @@ impl Fun {
 
 impl Display for Fun {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "fun ({} args)", self.arity())
+        write!(f, "fun {} ({} args)", self.name(), self.arity())
     }
 }
 
@@ -46,14 +52,19 @@ impl PartialEq for Fun {
 }
 
 pub struct NativeFun {
+    pub name: String,
     pub arity: usize,
     #[allow(clippy::type_complexity)]
     pub fun: Box<dyn Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError>>,
 }
 
 impl NativeFun {
-    pub fn new<T: Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static>(arity: usize, fun: T) -> Self {
-        Self { arity, fun: Box::new(fun) }
+    pub fn new<T: Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static, S: Into<String>>(name: S, arity: usize, fun: T) -> Self {
+        Self { name: name.into(), arity, fun: Box::new(fun) }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn arity(&self) -> usize {
