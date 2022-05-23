@@ -187,7 +187,7 @@ impl Parser {
                 rd_consume!(context, ident@Identifier => {
                     rd_consume!(context, LeftParen, "Expected '(' after function name", "Make sure that you have a '(' after the function name.")?;
                     
-                    let params = if let Some(Token::RightParen(..)) = context.tokens.peek() {
+                    let params = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
                         Vec::new()
                     } else {
                         Self::parameters(context)?   
@@ -398,7 +398,11 @@ impl Parser {
 
         while matches!(context.tokens.peek(), Some(Token::LeftParen(_))) {
             context.tokens.next();
-            let args = Self::arguments(context)?;
+            let args = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
+                Vec::new()
+            } else {
+                Self::arguments(context)?
+            };
 
             let call = rd_consume!(context, call@RightParen => call, "Expected a closing parenthesis `)` after the function call's arguments", "Make sure you have a closing parenthesis `)` after the function call's arguments.")?;
 
@@ -415,30 +419,7 @@ impl Parser {
         Ok(expr)
     });
 
-    rd_term!(arguments(context) :=> Vec<Expr> : {
-        let mut items = Vec::new();
-
-        if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
-            return Ok(items)
-        }
-
-        loop {
-            match Self::expression(context) {
-                Ok(item) => items.push(item),
-                Err(err) => {
-                    Self::synchronize(context);
-                    return Err(err);
-                }
-            }
-
-            if rd_matches!(context, Comma).is_none() {
-                break;
-            }
-        }
-        
-        Ok(items)
-    });
-
+    rd_term!(arguments := expression (Comma expression)* => Vec<Expr>);
 
     rd_term!(primary(context) :=> Expr : {
         match context.tokens.next() {
