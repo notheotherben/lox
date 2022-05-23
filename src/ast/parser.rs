@@ -369,7 +369,27 @@ impl Parser {
         rd_consume!(context, RightBrace => stmts, "Expected a closing brace `}` after the block", "Make sure you have a closing brace `}` after the block.")
     });
 
-    rd_term!(expression(context) :=> Expr : Self::assignment(context));
+    rd_term!(expression(context) :=> Expr : {
+        if let Some(fun) = rd_matches!(context, Fun) {
+            rd_consume!(context, LeftParen, "Expected '(' after function name", "Make sure that you have a '(' after the function name.")?;
+                    
+            let params = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
+                Vec::new()
+            } else {
+                Self::parameters(context)?   
+            };
+
+            rd_consume!(context, RightParen, "Expected ')' after the function parameters", "Make sure that you have a ')' after the function parameters.")?;
+
+            rd_consume!(context, LeftBrace, "Expected '{' after the function parameters", "Make sure that you have a '{' after the function parameters.")?;
+
+            let body = Self::block(context)?;
+
+            Ok(Expr::Fun(fun, params, body))
+        } else {
+            Self::assignment(context)
+        }
+    });
 
     rd_term!(assignment(context) :=> Expr : {
         let expr = Self::or(context)?;
@@ -587,5 +607,7 @@ mod tests {
         test_parse("fun f() {}", "(fun f (block))");
         test_parse("fun f(x, y) { x + y; }", "(fun f x y (block ((+ x y))))");
         test_parse("fun f(x, y) { return x + y; }", "(fun f x y (block (return (+ x y))))");
+
+        test_parse("var f = fun(a) {};", "(var f (fun @anonymous a (block)))");
     }
 }

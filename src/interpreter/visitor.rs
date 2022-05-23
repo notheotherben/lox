@@ -173,7 +173,10 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    
+    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+        let fun = Fun::closure("@anonymous", params, body, Rc::clone(&self.env));
+        Ok(Value::Callable(fun))
+    }
 }
 
 impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
@@ -213,7 +216,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         Ok(Value::Nil)
     }
 
-    fn visit_fun(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
         let fun = Fun::closure(name.lexeme(), params, body, Rc::clone(&self.env));
         self.env.write().unwrap().define(name.lexeme(), Value::Callable(fun));
         Ok(Value::Nil)

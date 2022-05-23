@@ -1,12 +1,13 @@
 use crate::lexer::Token;
 
-use super::Literal;
+use super::{Literal, Stmt};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Assign(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>, Token),
+    Fun(Token, Vec<Token>, Vec<Stmt>),
     Grouping(Box<Expr>),
     Literal(Literal),
     Logical(Box<Expr>, Token, Box<Expr>),
@@ -25,6 +26,9 @@ pub trait ExprVisitor<T> {
             },
             Expr::Call(callee, args, close) => {
                 self.visit_call(callee, args, close)
+            },
+            Expr::Fun(token, params, body) => {
+                self.visit_fun_expr(token, params, body)
             },
             Expr::Grouping(expr) => {
                 self.visit_grouping(expr)
@@ -49,6 +53,8 @@ pub trait ExprVisitor<T> {
     fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> T;
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> T;
+
+    fn visit_fun_expr(&mut self, token: &Token, params: &[Token], body: &[Stmt]) -> T;
 
     fn visit_grouping(&mut self, expr: &Expr) -> T;
 

@@ -21,7 +21,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
             Stmt::Block(stmts) => self.visit_block(stmts),
             Stmt::Break => self.visit_break(),
             Stmt::Expression(expr) => self.visit_expr_stmt(expr),
-            Stmt::Fun(name, params, body) => self.visit_fun(name, params, body),
+            Stmt::Fun(name, params, body) => self.visit_fun_def(name, params, body),
             Stmt::If(expr, then_branch, else_branch) => self.visit_if(expr, then_branch, else_branch.as_ref().map(|b| b.as_ref())),
             Stmt::Print(expr) => self.visit_print(expr),
             Stmt::Return(name, expr) => self.visit_return(name, expr.as_ref()),
@@ -37,7 +37,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
     
     fn visit_expr_stmt(&mut self, expr: &Expr) -> T;
     
-    fn visit_fun(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> T;
+    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> T;
 
     fn visit_if(&mut self, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> T;
     

@@ -3,6 +3,10 @@ use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt};
 pub struct AstPrinter{}
 
 impl ExprVisitor<String> for AstPrinter {
+    fn visit_assign(&mut self, ident: &crate::lexer::Token, value: &Expr) -> String {
+        format!("(= {} {})", ident.lexeme(), self.visit_expr(value))
+    }
+
     fn visit_binary(&mut self, left: &Expr, op: &crate::lexer::Token, right: &Expr) -> String {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
@@ -13,6 +17,18 @@ impl ExprVisitor<String> for AstPrinter {
             s.push(' ');
             s.push_str(&self.visit_expr(arg));
         }
+        s
+    }
+
+    fn visit_fun_expr(&mut self, _token: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
+        let mut s = "(fun @anonymous".to_string();
+        for param in params {
+            s.push(' ');
+            s.push_str(param.lexeme());
+        }
+        s.push(' ');
+        s.push_str(&self.visit_block(body));
+        s.push(')');
         s
     }
 
@@ -40,10 +56,6 @@ impl ExprVisitor<String> for AstPrinter {
     fn visit_var_ref(&mut self, name: &crate::lexer::Token) -> String {
         name.lexeme().to_string()
     }
-
-    fn visit_assign(&mut self, ident: &crate::lexer::Token, value: &Expr) -> String {
-        format!("(= {} {})", ident.lexeme(), self.visit_expr(value))
-    }    
 }
 
 impl StmtVisitor<String> for AstPrinter {
@@ -66,7 +78,7 @@ impl StmtVisitor<String> for AstPrinter {
         format!("({})", self.visit_expr(expr))
     }
 
-    fn visit_fun(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
+    fn visit_fun_def(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
         let mut result = String::new();
         result.push_str("(fun ");
         result.push_str(name.lexeme());
@@ -74,12 +86,8 @@ impl StmtVisitor<String> for AstPrinter {
             result.push(' ');
             result.push_str(param.lexeme());
         }
-        result.push_str(" (block");
-        for stmt in body {
-            result.push(' ');
-            result.push_str(&self.visit_stmt(stmt));
-        }
-        result.push(')');
+        result.push(' ');
+        result.push_str(&self.visit_block(body));
         result.push(')');
         result
     }
