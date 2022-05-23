@@ -89,12 +89,12 @@ pub struct Closure {
     pub name: String,
     pub args: Vec<Token>,
     pub body: Vec<Stmt>,
-    pub env: Rc<RwLock<Environment>>,
+    pub closure: Rc<RwLock<Environment>>,
 }
 
 impl Closure {
     pub fn new(name: String, args: &[Token], body: &[Stmt], env: Rc<RwLock<Environment>>) -> Self {
-        Self { name, args: args.into(), body: body.into(), env }
+        Self { name, args: args.into(), body: body.into(), closure: env }
     }
 
     pub fn name(&self) -> &str {
@@ -106,7 +106,7 @@ impl Closure {
     }
 
     pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
-        let env = Environment::child(self.env.clone());
+        let env = Environment::child(self.closure.clone());
         {
             let mut env = env.write().unwrap();
             
