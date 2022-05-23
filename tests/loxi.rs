@@ -45,3 +45,8 @@ fn if_conditionals() {
 fn fib() {
     run_file("tests/data/fib.lox").expect("no errors");
 }
+
+#[test]
+fn fib_fn() {
+    run_file("tests/data/fib_fn.lox").expect("no errors");
+}

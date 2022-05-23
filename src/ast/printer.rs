@@ -3,11 +3,11 @@ use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt};
 pub struct AstPrinter{}
 
 impl ExprVisitor<String> for AstPrinter {
-    fn visit_binary(&mut self, left: Expr, op: crate::lexer::Token, right: Expr) -> String {
+    fn visit_binary(&mut self, left: &Expr, op: &crate::lexer::Token, right: &Expr) -> String {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
-    fn visit_call(&mut self, callee: Expr, args: Vec<Expr>, _close: crate::lexer::Token) -> String {
+    fn visit_call(&mut self, callee: &Expr, args: &[Expr], _close: &crate::lexer::Token) -> String {
         let mut s = format!("call {}", self.visit_expr(callee));
         for arg in args {
             s.push(' ');
@@ -16,11 +16,11 @@ impl ExprVisitor<String> for AstPrinter {
         s
     }
 
-    fn visit_grouping(&mut self, expr: Expr) -> String {
+    fn visit_grouping(&mut self, expr: &Expr) -> String {
         format!("(group {})", self.visit_expr(expr))
     }
 
-    fn visit_literal(&mut self, value: Literal) -> String {
+    fn visit_literal(&mut self, value: &Literal) -> String {
         match value {
             Literal::Nil => "nil".to_string(),
             Literal::Bool(b) => b.to_string(),
@@ -29,25 +29,25 @@ impl ExprVisitor<String> for AstPrinter {
         }
     }
 
-    fn visit_logical(&mut self, left: Expr, op: crate::lexer::Token, right: Expr) -> String {
+    fn visit_logical(&mut self, left: &Expr, op: &crate::lexer::Token, right: &Expr) -> String {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
-    fn visit_unary(&mut self, op: crate::lexer::Token, expr: Expr) -> String {
+    fn visit_unary(&mut self, op: &crate::lexer::Token, expr: &Expr) -> String {
         format!("({} {})", op.lexeme(), self.visit_expr(expr))
     }
 
-    fn visit_var_ref(&mut self, name: crate::lexer::Token) -> String {
+    fn visit_var_ref(&mut self, name: &crate::lexer::Token) -> String {
         name.lexeme().to_string()
     }
 
-    fn visit_assign(&mut self, ident: crate::lexer::Token, value: Expr) -> String {
+    fn visit_assign(&mut self, ident: &crate::lexer::Token, value: &Expr) -> String {
         format!("(= {} {})", ident.lexeme(), self.visit_expr(value))
     }    
 }
 
 impl StmtVisitor<String> for AstPrinter {
-    fn visit_print(&mut self, expr: Expr) -> String {
+    fn visit_print(&mut self, expr: &Expr) -> String {
         format!("(print {})", self.visit_expr(expr))
     }
 
@@ -55,15 +55,15 @@ impl StmtVisitor<String> for AstPrinter {
         "break".to_string()
     }
 
-    fn visit_stmt_expr(&mut self, expr: Expr) -> String {
+    fn visit_stmt_expr(&mut self, expr: &Expr) -> String {
         format!("({})", self.visit_expr(expr))
     }
 
-    fn visit_var_def(&mut self, name: crate::lexer::Token, expr: Expr) -> String {
+    fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &Expr) -> String {
         format!("(var {} {})", name.lexeme(), self.visit_expr(expr))
     }
 
-    fn visit_block(&mut self, stmts: Vec<Stmt>) -> String {
+    fn visit_block(&mut self, stmts: &[Stmt]) -> String {
         let mut result = String::new();
         result.push_str("(block");
         for stmt in stmts {
@@ -74,7 +74,7 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_if(&mut self, cond: Expr, then_branch: Stmt, else_branch: Option<Stmt>) -> String {
+    fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> String {
         let mut result = String::new();
         result.push_str("(if ");
         result.push_str(&self.visit_expr(cond));
@@ -88,9 +88,28 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_while(&mut self, cond: Expr, body: Stmt) -> String {
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> String {
         format!("(while {} {})", self.visit_expr(cond), self.visit_stmt(body))
     }
+
+    fn visit_fun(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
+        let mut result = String::new();
+        result.push_str("(fun ");
+        result.push_str(name.lexeme());
+        for param in params {
+            result.push(' ');
+            result.push_str(param.lexeme());
+        }
+        result.push_str(" (block");
+        for stmt in body {
+            result.push(' ');
+            result.push_str(&self.visit_stmt(stmt));
+        }
+        result.push(')');
+        result.push(')');
+        result
+    }
+    
 }
 
 #[cfg(test)]
@@ -109,7 +128,7 @@ mod tests {
         );
 
         let mut printer = AstPrinter{};
-        let result = printer.visit_expr(expr);
+        let result = printer.visit_expr(&expr);
         assert_eq!(result, "(* (- 123) (group 45.67))");
     }
 }

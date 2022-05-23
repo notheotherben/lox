@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor}, LoxError, lexer::Token, errors};
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexer::Token, errors};
 
-use super::{env::Environment, Value, Interpreter};
+use super::{env::Environment, Value, Interpreter, Fun};
 
 impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
-    fn visit_binary(&mut self, left: crate::ast::Expr, op: crate::lexer::Token, right: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value, LoxError> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
         match op {
@@ -94,7 +94,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_call(&mut self, callee: crate::ast::Expr, args: Vec<crate::ast::Expr>, close: Token) -> Result<Value, LoxError> {
+    fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<Value, LoxError> {
         match self.visit_expr(callee)? {
             Value::Callable(fun) => {
                 if args.len() != fun.arity() {
@@ -119,7 +119,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         
     }
 
-    fn visit_unary(&mut self, op: crate::lexer::Token, expr: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_unary(&mut self, op: &Token, expr: &Expr) -> Result<Value, LoxError> {
         let right = self.visit_expr(expr)?;
 
         match op {
@@ -139,15 +139,15 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_grouping(&mut self, expr: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_grouping(&mut self, expr: &Expr) -> Result<Value, LoxError> {
         self.visit_expr(expr)
     }
 
-    fn visit_literal(&mut self, value: Literal) -> Result<Value, LoxError> {
+    fn visit_literal(&mut self, value: &Literal) -> Result<Value, LoxError> {
         Ok(value.into())
     }
 
-    fn visit_var_ref(&mut self, name: Token) -> Result<Value, LoxError> {
+    fn visit_var_ref(&mut self, name: &Token) -> Result<Value, LoxError> {
         match self.env.read().unwrap().get(name.lexeme()) {
             Some(value) => Ok(value),
             None => Err(errors::user(
@@ -157,13 +157,13 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_assign(&mut self, ident: Token, value: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(value)?;
         self.env.write().unwrap().assign(ident.lexeme(), value.clone())?;
         Ok(value)
     }
 
-    fn visit_logical(&mut self, left: crate::ast::Expr, op: Token, right: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value, LoxError> {
         let left = self.visit_expr(left)?;
 
         match op {
@@ -177,7 +177,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 }
 
 impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
-    fn visit_print(&mut self, expr: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_print(&mut self, expr: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
         println!("{}", value);
         Ok(Value::Nil)
@@ -188,19 +188,19 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         Ok(Value::Nil)
     }
 
-    fn visit_stmt_expr(&mut self, expr: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_stmt_expr(&mut self, expr: &Expr) -> Result<Value, LoxError> {
         self.visit_expr(expr)?;
 
         Ok(Value::Nil)
     }
 
-    fn visit_var_def(&mut self, name: Token, expr: crate::ast::Expr) -> Result<Value, LoxError> {
+    fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
         self.env.write().unwrap().define(name.lexeme(), value);
         Ok(Value::Nil)
     }
 
-    fn visit_block(&mut self, stmts: Vec<crate::ast::Stmt>) -> Result<Value, LoxError> {
+    fn visit_block(&mut self, stmts: &[Stmt]) -> Result<Value, LoxError> {
         let parent = Rc::clone(&self.env);
         self.env = Environment::child(Rc::clone(&parent));
 
@@ -221,7 +221,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         result
     }
 
-    fn visit_if(&mut self, cond: crate::ast::Expr, then_branch: crate::ast::Stmt, else_branch: Option<crate::ast::Stmt>) -> Result<Value, LoxError> {
+    fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<Value, LoxError> {
         let cond = self.visit_expr(cond)?;
 
         if cond.is_truthy() {
@@ -233,18 +233,24 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_while(&mut self, cond: crate::ast::Expr, body: crate::ast::Stmt) -> Result<Value, LoxError> {
-        // TODO: Figure out how to avoid the need to clone cond/body here
-        let mut cont = self.visit_expr(cond.clone())?;
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> Result<Value, LoxError> {
+        let mut cont = self.visit_expr(cond)?;
         while cont.is_truthy() && !self.breaking {
-            self.visit_stmt(body.clone())?;
+            self.visit_stmt(body)?;
 
-            cont = self.visit_expr(cond.clone())?;
+            cont = self.visit_expr(cond)?;
         }
 
         self.breaking = false;
         Ok(Value::Nil)
     }
+
+    fn visit_fun(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+        let fun = Fun::closure(name.lexeme(), params, body, Rc::clone(&self.env));
+        self.env.write().unwrap().define(name.lexeme(), Value::Callable(fun));
+        Ok(Value::Nil)
+    }
+    
 }
 
 #[cfg(test)]
@@ -259,7 +265,7 @@ mod tests {
         let tree = Parser::parse_expr(&mut lexer.filter_map(|x| x.ok())).expect("no errors");
 
         let mut interpreter = Interpreter::default();
-        let result = interpreter.visit_expr(tree).expect("no errors");
+        let result = interpreter.visit_expr(&tree).expect("no errors");
         assert_eq!(result, Value::Number(8.0));
     }
 }

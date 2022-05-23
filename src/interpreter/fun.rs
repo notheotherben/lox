@@ -1,12 +1,13 @@
-use std::{fmt::{Display, Debug}, rc::Rc};
+use std::{fmt::{Display, Debug}, rc::Rc, sync::RwLock};
 
-use crate::{LoxError};
+use crate::{LoxError, lexer::Token, ast::Stmt};
 
-use super::{Value, Interpreter};
+use super::{Value, Interpreter, env::Environment};
 
 #[derive(Clone)]
 pub enum Fun {
     Native(Rc<NativeFun>),
+    Closure(Closure),
 }
 
 impl Fun {
@@ -14,21 +15,28 @@ impl Fun {
         Fun::Native(Rc::new(NativeFun::new(name, arity, fun)))
     }
 
+    pub fn closure<S: Into<String>>(name: S, params: &[Token], body: &[Stmt], env: Rc<RwLock<Environment>>) -> Self {
+        Fun::Closure(Closure::new(name.into(), params, body, env))
+    }
+
     pub fn name(&self) -> &str {
         match self {
             Fun::Native(fun) => fun.name(),
+            Fun::Closure(closure) => closure.name(),
         }
     }
 
     pub fn arity(&self) -> usize {
         match self {
             Fun::Native(fun) => fun.arity(),
+            Fun::Closure(closure) => closure.arity(),
         }
     }
 
     pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
         match self {
             Fun::Native(fun) => fun.call(interpreter, args),
+            Fun::Closure(closure) => closure.call(interpreter, args),
         }
     }
 }
@@ -73,5 +81,49 @@ impl NativeFun {
 
     pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
         (self.fun)(interpreter, args)
+    }
+}
+
+#[derive(Clone)]
+pub struct Closure {
+    pub name: String,
+    pub args: Vec<Token>,
+    pub body: Vec<Stmt>,
+    pub env: Rc<RwLock<Environment>>,
+}
+
+impl Closure {
+    pub fn new(name: String, args: &[Token], body: &[Stmt], env: Rc<RwLock<Environment>>) -> Self {
+        Self { name, args: args.into(), body: body.into(), env }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn arity(&self) -> usize {
+        self.args.len()
+    }
+
+    pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
+        let env = Environment::child(self.env.clone());
+        {
+            let mut env = env.write().unwrap();
+            
+            self.args.iter().zip(args).for_each(|(arg, value)| {
+                env.define(arg.lexeme(), value);
+            });
+        }
+
+        let old_env = interpreter.env.clone();
+        interpreter.env = env;
+
+        let result = interpreter.interpret(&self.body);
+
+        interpreter.env = old_env;
+        
+        result?;
+
+        Ok(Value::Nil)
     }
 }

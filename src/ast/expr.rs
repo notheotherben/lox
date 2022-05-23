@@ -15,28 +15,28 @@ pub enum Expr {
 }
 
 pub trait ExprVisitor<T> {
-    fn visit_expr(&mut self, expr: Expr) -> T {
+    fn visit_expr(&mut self, expr: &Expr) -> T {
         match expr {
             Expr::Assign(ident, value) => {
-                self.visit_assign(ident, *value)
+                self.visit_assign(ident, value)
             },
             Expr::Binary(left, op, right) => {
-                self.visit_binary(*left, op, *right)
+                self.visit_binary(left, op, right)
             },
             Expr::Call(callee, args, close) => {
-                self.visit_call(*callee, args, close)
+                self.visit_call(callee, args, close)
             },
             Expr::Grouping(expr) => {
-                self.visit_grouping(*expr)
+                self.visit_grouping(expr)
             },
             Expr::Logical(left, op, right) => {
-                self.visit_logical(*left, op, *right)
+                self.visit_logical(left, op, right)
             },
             Expr::Literal(value) => {
                 self.visit_literal(value)
             },
             Expr::Unary(op, expr) => {
-                self.visit_unary(op, *expr)
+                self.visit_unary(op, expr)
             },
             Expr::Var(name) => {
                 self.visit_var_ref(name)
@@ -44,19 +44,19 @@ pub trait ExprVisitor<T> {
         }
     }
 
-    fn visit_assign(&mut self, ident: Token, value: Expr) -> T;
+    fn visit_assign(&mut self, ident: &Token, value: &Expr) -> T;
 
-    fn visit_binary(&mut self, left: Expr, op: Token, right: Expr) -> T;
+    fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> T;
 
-    fn visit_call(&mut self, callee: Expr, args: Vec<Expr>, close: Token) -> T;
+    fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> T;
 
-    fn visit_grouping(&mut self, expr: Expr) -> T;
+    fn visit_grouping(&mut self, expr: &Expr) -> T;
 
-    fn visit_literal(&mut self, value: Literal) -> T;
+    fn visit_literal(&mut self, value: &Literal) -> T;
 
-    fn visit_logical(&mut self, left: Expr, op: Token, right: Expr) -> T;
+    fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> T;
 
-    fn visit_unary(&mut self, op: Token, expr: Expr) -> T;
+    fn visit_unary(&mut self, op: &Token, expr: &Expr) -> T;
 
-    fn visit_var_ref(&mut self, name: Token) -> T;
+    fn visit_var_ref(&mut self, name: &Token) -> T;
 }

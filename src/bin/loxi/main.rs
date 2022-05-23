@@ -66,7 +66,7 @@ fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     }
 
     if !had_error {
-        interpreter.interpret(stmts)?;
+        interpreter.interpret(&stmts)?;
     }
 
     Ok(())

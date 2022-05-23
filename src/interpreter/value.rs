@@ -45,13 +45,13 @@ impl std::fmt::Display for Value {
     }
 }
 
-impl From<Literal> for Value {
-    fn from(literal: Literal) -> Self {
+impl From<&Literal> for Value {
+    fn from(literal: &Literal) -> Self {
         match literal {
             Literal::Nil => Value::Nil,
-            Literal::Bool(b) => Value::Bool(b),
-            Literal::Number(n) => Value::Number(n),
-            Literal::String(s) => Value::String(s),
+            Literal::Bool(b) => Value::Bool(*b),
+            Literal::Number(n) => Value::Number(*n),
+            Literal::String(s) => Value::String(s.clone()),
         }
     }
 }
