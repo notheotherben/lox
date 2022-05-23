@@ -40,7 +40,7 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
-            Value::Callable(fun) => write!(f, "fun ({} args)", fun.arity()),
+            Value::Callable(fun) => write!(f, "<fn {}>", fun.name()),
         }
     }
 }

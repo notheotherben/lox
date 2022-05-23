@@ -187,7 +187,11 @@ impl Parser {
                 rd_consume!(context, ident@Identifier => {
                     rd_consume!(context, LeftParen, "Expected '(' after function name", "Make sure that you have a '(' after the function name.")?;
                     
-                    let params = Self::parameters(context)?;
+                    let params = if let Some(Token::RightParen(..)) = context.tokens.peek() {
+                        Vec::new()
+                    } else {
+                        Self::parameters(context)?   
+                    };
 
                     rd_consume!(context, RightParen, "Expected ')' after the function parameters", "Make sure that you have a ')' after the function parameters.")?;
 
@@ -589,6 +593,7 @@ mod tests {
 
     #[test]
     fn parse_function_def() {
+        test_parse("fun f() {}", "(fun f (block))");
         test_parse("fun f(x, y) { x + y; }", "(fun f x y (block ((+ x y))))");
     }
 }
