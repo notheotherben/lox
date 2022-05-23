@@ -1,3 +1,5 @@
+// Testing a basic function
+print "Testing a basic fibonacci function";
 fun fib(limit) {
   var a = 0;
   var temp;
@@ -11,12 +13,17 @@ fun fib(limit) {
 
 fib(10000);
 
+
+// Testing return values for functions
+print "Testing return values from a function";
 fun add(a, b) {
   return a + b;
 }
 
 assert(add(1, 2) == 3, "add function should work correctly");
 
+// Testing recursive functions and return stopping execution
+print "Testing recursive fibonacci";
 fun rfib(n) {
   if (n <= 1) return n;
   return rfib(n - 2) + rfib(n - 1);
@@ -25,3 +32,19 @@ fun rfib(n) {
 for (var i = 0; i < 20; i = i + 1) {
   print rfib(i);
 }
+
+// Testing functions which capture a closure
+print "Testing a closure capture";
+fun makeCounter() {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    return i;
+  }
+
+  return count;
+}
+
+var counter = makeCounter();
+assert(counter() == 1, "The first counter value should be 1");
+assert(counter() == 2, "The second counter value should be 2");
