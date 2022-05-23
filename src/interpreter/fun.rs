@@ -1,6 +1,6 @@
 use std::{fmt::{Display, Debug}, rc::Rc, sync::RwLock};
 
-use crate::{LoxError, lexer::Token, ast::Stmt};
+use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}};
 
 use super::{Value, Interpreter, env::Environment};
 
@@ -118,7 +118,7 @@ impl Closure {
         let old_env = interpreter.env.clone();
         interpreter.env = env;
 
-        let result = interpreter.interpret(&self.body);
+        let result = interpreter.visit_block(&self.body);
 
         interpreter.env = old_env;
         

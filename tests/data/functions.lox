@@ -16,3 +16,12 @@ fun add(a, b) {
 }
 
 assert(add(1, 2) == 3, "add function should work correctly");
+
+fun rfib(n) {
+  if (n <= 1) return n;
+  return rfib(n - 2) + rfib(n - 1);
+}
+
+for (var i = 0; i < 20; i = i + 1) {
+  print rfib(i);
+}

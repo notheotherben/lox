@@ -283,4 +283,22 @@ mod tests {
         let result = interpreter.visit_expr(&tree).expect("no errors");
         assert_eq!(result, Value::Number(8.0));
     }
+
+    #[test]
+    fn test_recursive_functions() {
+        let lexer = Scanner::new(r#"
+            fun fib(n) {
+                if (n <= 2) return n;
+                return fib(n - 1) + fib(n - 2);
+            }
+
+            var result = fib(10);
+            assert(result == 89, "Function should return the correct number, got " + result);
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        assert!(errs.is_empty(), "no errors");
+
+        let mut interpreter = Interpreter::default();
+        interpreter.interpret(&tree).expect("no errors");
+    }
 }
