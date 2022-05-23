@@ -3,19 +3,19 @@ use crate::lexer::Token;
 use super::Literal;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr<'a> {
-    Assign(Token<'a>, Box<Expr<'a>>),
-    Binary(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
-    Call(Box<Expr<'a>>, Vec<Expr<'a>>, Token<'a>),
-    Grouping(Box<Expr<'a>>),
+pub enum Expr {
+    Assign(Token, Box<Expr>),
+    Binary(Box<Expr>, Token, Box<Expr>),
+    Call(Box<Expr>, Vec<Expr>, Token),
+    Grouping(Box<Expr>),
     Literal(Literal),
-    Logical(Box<Expr<'a>>, Token<'a>, Box<Expr<'a>>),
-    Unary(Token<'a>, Box<Expr<'a>>),
-    Var(Token<'a>),
+    Logical(Box<Expr>, Token, Box<Expr>),
+    Unary(Token, Box<Expr>),
+    Var(Token),
 }
 
 pub trait ExprVisitor<T> {
-    fn visit_expr(&mut self, expr: Expr<'_>) -> T {
+    fn visit_expr(&mut self, expr: Expr) -> T {
         match expr {
             Expr::Assign(ident, value) => {
                 self.visit_assign(ident, *value)
@@ -44,19 +44,19 @@ pub trait ExprVisitor<T> {
         }
     }
 
-    fn visit_assign(&mut self, ident: Token<'_>, value: Expr<'_>) -> T;
+    fn visit_assign(&mut self, ident: Token, value: Expr) -> T;
 
-    fn visit_binary<'a>(&mut self, left: Expr<'a>, op: Token<'a>, right: Expr<'a>) -> T;
+    fn visit_binary(&mut self, left: Expr, op: Token, right: Expr) -> T;
 
-    fn visit_call<'a>(&mut self, callee: Expr<'a>, args: Vec<Expr<'a>>, close: Token<'a>) -> T;
+    fn visit_call(&mut self, callee: Expr, args: Vec<Expr>, close: Token) -> T;
 
-    fn visit_grouping(&mut self, expr: Expr<'_>) -> T;
+    fn visit_grouping(&mut self, expr: Expr) -> T;
 
     fn visit_literal(&mut self, value: Literal) -> T;
 
-    fn visit_logical(&mut self, left: Expr<'_>, op: Token<'_>, right: Expr<'_>) -> T;
+    fn visit_logical(&mut self, left: Expr, op: Token, right: Expr) -> T;
 
-    fn visit_unary<'a>(&mut self, op: Token<'a>, expr: Expr<'a>) -> T;
+    fn visit_unary(&mut self, op: Token, expr: Expr) -> T;
 
-    fn visit_var_ref(&mut self, name: Token<'_>) -> T;
+    fn visit_var_ref(&mut self, name: Token) -> T;
 }

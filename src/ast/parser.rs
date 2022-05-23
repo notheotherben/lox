@@ -6,32 +6,16 @@ use super::{Expr, Literal, Stmt};
 
 pub struct Parser {}
 
-struct ParseContext<'a, I: Iterator<Item = Token<'a>>> {
+struct ParseContext<I: Iterator<Item = Token>> {
     tokens: Peekable<I>,
     loop_depth: usize,
 }
 
 // Macros which make it easier to implement certain common parts of the parser.
 macro_rules! rd_term {
-    ($name:ident($context:ident) :=> Vec<Stmt> : $body:expr) => {
-        rd_term!($name($context) :=> Vec<Stmt<'a>> : $body);
-    };
-
-    ($name:ident($context:ident) :=> Vec<Expr> : $body:expr) => {
-        rd_term!($name($context) :=> Vec<Expr<'a>> : $body);
-    };
-
-    ($name:ident($context:ident) :=> Stmt : $body:expr) => {
-        rd_term!($name($context) :=> Stmt<'a> : $body);
-    };
-
-    ($name:ident($context:ident) :=> Expr : $body:expr) => {
-        rd_term!($name($context) :=> Expr<'a> : $body);
-    };
-
     ($name:ident($context:ident) :=> $ret:ty : $body:expr) => {
-        fn $name<'a, T: Iterator<Item = Token<'a>>>(
-            $context: &mut ParseContext<'a, T>,
+        fn $name<'a, T: Iterator<Item = Token>>(
+            $context: &mut ParseContext<T>,
         ) -> Result<$ret, LoxError> {
             $body
         }
@@ -132,9 +116,9 @@ macro_rules! rd_consume {
 }
 
 impl Parser {
-    pub fn parse<'a, T: Iterator<Item = Token<'a>>>(
+    pub fn parse<T: Iterator<Item = Token>>(
         tokens: &mut T,
-    ) -> (Vec<Stmt<'a>>, Vec<LoxError>) {
+    ) -> (Vec<Stmt>, Vec<LoxError>) {
         let mut context = ParseContext {
             tokens: tokens.peekable(),
             loop_depth: 0,
@@ -156,9 +140,9 @@ impl Parser {
         (stmts, errs)
     }
 
-    pub fn parse_expr<'a, T: Iterator<Item = Token<'a>>>(
+    pub fn parse_expr<T: Iterator<Item = Token>>(
         tokens: &mut T,
-    ) -> Result<Expr<'a>, LoxError> {
+    ) -> Result<Expr, LoxError> {
         let mut context = ParseContext {
             tokens: tokens.peekable(),
             loop_depth: 1
@@ -458,8 +442,8 @@ impl Parser {
         }
     });
 
-    fn synchronize<'a, T: Iterator<Item = Token<'a>>>(
-        context: &mut ParseContext<'a, T>
+    fn synchronize<T: Iterator<Item = Token>>(
+        context: &mut ParseContext<T>
     ) {
         while let Some(token) = context.tokens.next() {
             match (token, context.tokens.peek()) {

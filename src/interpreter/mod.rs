@@ -10,7 +10,7 @@ pub use value::Value;
 
 use crate::{ast::{Stmt, StmtVisitor}, LoxError};
 
-pub fn interpret(stmts: Vec<Stmt<'_>>) -> Result<(), LoxError> {
+pub fn interpret(stmts: Vec<Stmt>) -> Result<(), LoxError> {
     let mut interpreter = Interpreter::default();
     for stmt in stmts {
         interpreter.visit_stmt(stmt)?;

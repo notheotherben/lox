@@ -69,7 +69,7 @@ impl<'a> Scanner<'a> {
         length
     }
 
-    fn read_token(&mut self) -> Option<Result<Token<'a>, LoxError>> {
+    fn read_token(&mut self) -> Option<Result<Token, LoxError>> {
         while let Some((loc, char)) = self.chars.next() {
             let location = self.location(loc);
 
@@ -152,7 +152,7 @@ impl<'a> Scanner<'a> {
         None
     }
 
-    fn read_string(&mut self, start: usize) -> Result<Token<'a>, LoxError> {
+    fn read_string(&mut self, start: usize) -> Result<Token, LoxError> {
         let location = self.location(start);
         
         while let Some((loc, c)) = self.chars.next() {
@@ -162,7 +162,7 @@ impl<'a> Scanner<'a> {
                     self.last_newline = loc;
                 },
                 '"' => {
-                    return Ok(Token::String(location, &self.source[start..loc+1]));
+                    return Ok(Token::String(location, self.source[start..loc+1].to_string()));
                 },
                 _ => {}
             }
@@ -175,7 +175,7 @@ impl<'a> Scanner<'a> {
         )))
     }
 
-    fn read_number(&mut self, start: usize) -> Result<Token<'a>, LoxError> {
+    fn read_number(&mut self, start: usize) -> Result<Token, LoxError> {
         let location = self.location(start);
 
         let mut end = start+self.advance_while_fn(|_, c| c.is_numeric());
@@ -186,10 +186,10 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        return Ok(Token::Number(location, &self.source[start..end+1]));
+        Ok(Token::Number(location, self.source[start..end+1].to_string()))
     }
 
-    fn read_identifier(&mut self, start: usize) -> Result<Token<'a>, LoxError> {
+    fn read_identifier(&mut self, start: usize) -> Result<Token, LoxError> {
         let location = self.location(start);
 
         let end = start + self.advance_while_fn(|_, c| c.is_alphanumeric() || c == '_');
@@ -213,13 +213,13 @@ impl<'a> Scanner<'a> {
             "true" => Ok(Token::True(location)),
             "var" => Ok(Token::Var(location)),
             "while" => Ok(Token::While(location)),
-            lexeme => Ok(Token::Identifier(location, lexeme)),
+            lexeme => Ok(Token::Identifier(location, lexeme.to_string())),
         }
     }
 }
 
 impl<'a> Iterator for Scanner<'a> {
-    type Item = Result<Token<'a>, LoxError>;
+    type Item = Result<Token, LoxError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.read_token()

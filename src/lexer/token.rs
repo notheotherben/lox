@@ -2,8 +2,8 @@ use std::fmt::Display;
 
 use crate::core::Location;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Token<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Token {
     LeftParen(Location),
     RightParen(Location),
     LeftBrace(Location),
@@ -25,9 +25,9 @@ pub enum Token<'a> {
     Less(Location),
     LessEqual(Location),
 
-    Identifier(Location, &'a str),
-    String(Location, &'a str),
-    Number(Location, &'a str),
+    Identifier(Location, String),
+    String(Location, String),
+    Number(Location, String),
 
     And(Location),
     Break(Location),
@@ -48,7 +48,7 @@ pub enum Token<'a> {
     While(Location),
 }
 
-impl<'a> Token<'a> {
+impl Token {
     pub fn location(&self) -> Location {
         match self {
             Token::LeftParen(loc) => *loc,
@@ -96,7 +96,7 @@ impl<'a> Token<'a> {
         }
     }
 
-    pub fn lexeme(&self) -> &'a str {
+    pub fn lexeme(&self) -> &str {
         match self {
             Token::LeftParen(..) => "(",
             Token::RightParen(..) => ")",
@@ -144,8 +144,8 @@ impl<'a> Token<'a> {
     }
 }
 
-impl Display for Token<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "'{}' at {}", self.lexeme(), self.location())
     }
 }

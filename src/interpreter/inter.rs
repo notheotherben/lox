@@ -11,7 +11,7 @@ pub struct Interpreter{
 }
 
 impl Interpreter {
-    pub fn interpret(&mut self, stmts: Vec<Stmt<'_>>) -> Result<(), LoxError> {
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> Result<(), LoxError> {
         for stmt in stmts {
             self.visit_stmt(stmt)?;
         }
