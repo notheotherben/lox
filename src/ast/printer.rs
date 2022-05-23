@@ -47,20 +47,8 @@ impl ExprVisitor<String> for AstPrinter {
 }
 
 impl StmtVisitor<String> for AstPrinter {
-    fn visit_print(&mut self, expr: &Expr) -> String {
-        format!("(print {})", self.visit_expr(expr))
-    }
-
     fn visit_break(&mut self) -> String {
         "break".to_string()
-    }
-
-    fn visit_stmt_expr(&mut self, expr: &Expr) -> String {
-        format!("({})", self.visit_expr(expr))
-    }
-
-    fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &Expr) -> String {
-        format!("(var {} {})", name.lexeme(), self.visit_expr(expr))
     }
 
     fn visit_block(&mut self, stmts: &[Stmt]) -> String {
@@ -74,22 +62,8 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> String {
-        let mut result = String::new();
-        result.push_str("(if ");
-        result.push_str(&self.visit_expr(cond));
-        result.push(' ');
-        result.push_str(&self.visit_stmt(then_branch));
-        if let Some(else_branch) = else_branch {
-            result.push(' ');
-            result.push_str(&self.visit_stmt(else_branch));
-        }
-        result.push(')');
-        result
-    }
-
-    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> String {
-        format!("(while {} {})", self.visit_expr(cond), self.visit_stmt(body))
+    fn visit_expr_stmt(&mut self, expr: &Expr) -> String {
+        format!("({})", self.visit_expr(expr))
     }
 
     fn visit_fun(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
@@ -108,6 +82,43 @@ impl StmtVisitor<String> for AstPrinter {
         result.push(')');
         result.push(')');
         result
+    }
+
+    fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> String {
+        let mut result = String::new();
+        result.push_str("(if ");
+        result.push_str(&self.visit_expr(cond));
+        result.push(' ');
+        result.push_str(&self.visit_stmt(then_branch));
+        if let Some(else_branch) = else_branch {
+            result.push(' ');
+            result.push_str(&self.visit_stmt(else_branch));
+        }
+        result.push(')');
+        result
+    }
+
+    fn visit_print(&mut self, expr: &Expr) -> String {
+        format!("(print {})", self.visit_expr(expr))
+    }
+
+    fn visit_return(&mut self, _token: &crate::lexer::Token, expr: Option<&Expr>) -> String {
+        let mut result = String::new();
+        result.push_str("(return");
+        if let Some(expr) = expr {
+            result.push(' ');
+            result.push_str(&self.visit_expr(expr));
+        }
+        result.push(')');
+        result
+    }
+
+    fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &Expr) -> String {
+        format!("(var {} {})", name.lexeme(), self.visit_expr(expr))
+    }
+
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> String {
+        format!("(while {} {})", self.visit_expr(cond), self.visit_stmt(body))
     }
     
 }

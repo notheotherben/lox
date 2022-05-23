@@ -47,6 +47,6 @@ fn fib() {
 }
 
 #[test]
-fn fib_fn() {
-    run_file("tests/data/fib_fn.lox").expect("no errors");
+fn functions() {
+    run_file("tests/data/functions.lox").expect("no errors");
 }

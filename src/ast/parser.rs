@@ -234,6 +234,16 @@ impl Parser {
                 context.loop_depth -= 1;
                 return stmt
             },
+            Some(Token::Return(_)) => {
+                let ret = context.tokens.next().unwrap();
+                let expr = if let Some(Token::Semicolon(_)) = context.tokens.peek() {
+                    None
+                } else {
+                    Some(Self::expression(context)?)
+                };
+
+                Stmt::Return(ret, expr)
+            },
             Some(Token::Break(_)) => {
                 context.tokens.next();
 
@@ -576,5 +586,6 @@ mod tests {
     fn parse_function_def() {
         test_parse("fun f() {}", "(fun f (block))");
         test_parse("fun f(x, y) { x + y; }", "(fun f x y (block ((+ x y))))");
+        test_parse("fun f(x, y) { return x + y; }", "(fun f x y (block (return (+ x y))))");
     }
 }

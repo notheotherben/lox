@@ -8,6 +8,7 @@ use super::{env::Environment, Value, Fun};
 pub struct Interpreter{
     pub (crate) env: Rc<RwLock<Environment>>,
     pub (crate) breaking: bool,
+    pub (crate) returning: Option<Value>,
 }
 
 impl Interpreter {
@@ -33,9 +34,22 @@ impl Default for Interpreter {
             Ok(Value::Number(offset.as_secs() as f64))
         })));
 
+        globals.define("assert", Value::Callable(Fun::native("native@assert", 2, |_, args| {
+            if !args[0].is_truthy() {
+                return Err(errors::user_with_internal(
+                    "Assertion failed",
+                    "Make sure that the first argument passed to the assert function is truthy.",
+                    human_errors::detailed_message(&args[1].to_string()),
+                ));
+            }
+
+            Ok(Value::Nil)
+        })));
+
         Self {
             env: Environment::child(Rc::new(RwLock::new(globals))),
             breaking: false,
+            returning: None,
         }
     }
 }

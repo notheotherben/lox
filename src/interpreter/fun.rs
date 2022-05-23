@@ -124,6 +124,9 @@ impl Closure {
         
         result?;
 
-        Ok(Value::Nil)
+        let result = interpreter.returning.clone().unwrap_or(Value::Nil);
+        interpreter.returning = None;
+
+        Ok(result)
     }
 }

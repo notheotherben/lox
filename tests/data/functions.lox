@@ -10,3 +10,9 @@ fun fib(limit) {
 }
 
 fib(10000);
+
+fun add(a, b) {
+  return a + b;
+}
+
+assert(add(1, 2) == 3, "add function should work correctly");

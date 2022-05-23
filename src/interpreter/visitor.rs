@@ -177,26 +177,8 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 }
 
 impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
-    fn visit_print(&mut self, expr: &Expr) -> Result<Value, LoxError> {
-        let value = self.visit_expr(expr)?;
-        println!("{}", value);
-        Ok(Value::Nil)
-    }
-
     fn visit_break(&mut self) -> Result<Value, LoxError> {
         self.breaking = true;
-        Ok(Value::Nil)
-    }
-
-    fn visit_stmt_expr(&mut self, expr: &Expr) -> Result<Value, LoxError> {
-        self.visit_expr(expr)?;
-
-        Ok(Value::Nil)
-    }
-
-    fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<Value, LoxError> {
-        let value = self.visit_expr(expr)?;
-        self.env.write().unwrap().define(name.lexeme(), value);
         Ok(Value::Nil)
     }
 
@@ -211,6 +193,10 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
                 break;
             }
 
+            if self.returning.is_some() {
+                break;
+            }
+
             if let Err(e) = self.visit_stmt(stmt) {
                 result = Err(e);
                 break;
@@ -219,6 +205,18 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
         self.env = parent;
         result
+    }
+
+    fn visit_expr_stmt(&mut self, expr: &Expr) -> Result<Value, LoxError> {
+        self.visit_expr(expr)?;
+
+        Ok(Value::Nil)
+    }
+
+    fn visit_fun(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+        let fun = Fun::closure(name.lexeme(), params, body, Rc::clone(&self.env));
+        self.env.write().unwrap().define(name.lexeme(), Value::Callable(fun));
+        Ok(Value::Nil)
     }
 
     fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<Value, LoxError> {
@@ -233,6 +231,29 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
+    fn visit_print(&mut self, expr: &Expr) -> Result<Value, LoxError> {
+        let value = self.visit_expr(expr)?;
+        println!("{}", value);
+        Ok(Value::Nil)
+    }
+
+    fn visit_return(&mut self, _token: &Token, expr: Option<&Expr>) -> Result<Value, LoxError> {
+        if let Some(expr) = expr {
+            let value = self.visit_expr(expr)?;
+            self.returning = Some(value);
+        } else {
+            self.returning = Some(Value::Nil);
+        }
+
+        Ok(Value::Nil)
+    }
+
+    fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<Value, LoxError> {
+        let value = self.visit_expr(expr)?;
+        self.env.write().unwrap().define(name.lexeme(), value);
+        Ok(Value::Nil)
+    }
+
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> Result<Value, LoxError> {
         let mut cont = self.visit_expr(cond)?;
         while cont.is_truthy() && !self.breaking {
@@ -242,12 +263,6 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         }
 
         self.breaking = false;
-        Ok(Value::Nil)
-    }
-
-    fn visit_fun(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
-        let fun = Fun::closure(name.lexeme(), params, body, Rc::clone(&self.env));
-        self.env.write().unwrap().define(name.lexeme(), Value::Callable(fun));
         Ok(Value::Nil)
     }
     
