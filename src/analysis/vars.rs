@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use crate::{ast::{ExprVisitor, StmtVisitor}, LoxError, errors};
 
+use super::Analyzer;
+
 #[derive(Debug)]
 pub (super) struct VariableAnalyzer {
     pub (super) scopes: Vec<HashMap<String, bool>>,
@@ -32,6 +34,8 @@ impl Default for VariableAnalyzer {
         }
     }
 }
+
+impl Analyzer for VariableAnalyzer {}
 
 impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
     fn visit_assign(&mut self, ident: &crate::lexer::Token, value: &crate::ast::Expr) -> Vec<LoxError> {
@@ -175,8 +179,20 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
     }
 
     fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &crate::ast::Expr) -> Vec<LoxError> {
+        let errs = if self.scopes.last().map(|s| s.contains_key(name.lexeme())).unwrap_or_default() {
+            vec![errors::user(
+                &format!("Variable '{}' is already defined in this scope, duplicate declaration found at {}.", name.lexeme(), name.location()),
+                "Remove the `var` keyword to assign a new value to this variable, or rename it if you intended to maintain a separate instance.",
+            )]
+        } else {
+            Vec::new()
+        };
+
         self.declare(name.lexeme());
-        let errs = self.visit_expr(expr);
+        let errs = vec![
+            errs,
+            self.visit_expr(expr)
+        ].into_iter().flatten().collect();
         self.initialize(name.lexeme());
         errs
     }
@@ -186,5 +202,30 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
             self.visit_expr(expr),
             self.visit_stmt(body),
         ].into_iter().flatten().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{lexer::Scanner, ast::Parser, analysis::Analyzer};
+
+    #[test]
+    fn test_duplicate_local_variables() {
+        let mut analyzer = super::VariableAnalyzer::default();
+
+        let (tree, errs) = Parser::parse(
+            &mut Scanner::new(
+                r#"
+                var a = 1;
+                var a = 2;
+                "#
+            ).filter_map(|t| t.ok())
+        );
+
+        assert!(errs.is_empty(), "no parsing errors");
+
+        let errs = analyzer.analyze(&tree);
+        assert_eq!(errs.len(), 1, "expected 1 error");
+        assert_eq!(errs[0].description(), "Variable 'a' is already defined in this scope, duplicate declaration found at line 3, column 21.");
     }
 }
