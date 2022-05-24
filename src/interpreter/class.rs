@@ -8,11 +8,16 @@ use super::{Fun, Value};
 pub struct Class {
     name: String,
     methods: HashMap<String, Fun>,
+    statics: HashMap<String, Value>,
 }
 
 impl Class {
     pub fn new<S: Into<String>>(name: S) -> Self {
-        Self { name: name.into(), methods: Default::default() }
+        Self { name: name.into(), methods: Default::default(), statics: Default::default() }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn define<S: Into<String>>(&mut self, name: S, fun: Fun) {
@@ -21,6 +26,14 @@ impl Class {
 
     pub fn find_method(&self, name: &str) -> Option<Fun> {
         self.methods.get(name).cloned()
+    }
+
+    pub fn set<S: Into<String>>(&mut self, name: S, value: Value) {
+        self.statics.insert(name.into(), value);
+    }
+
+    pub fn get(&self, name: &str) -> Option<Value> {
+        self.statics.get(name).cloned()
     }
 }
 

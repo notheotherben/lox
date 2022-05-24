@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ast::{ExprVisitor, StmtVisitor}, LoxError, errors, lexer::Token};
+use crate::{ast::{ExprVisitor, StmtVisitor, Stmt, Expr}, LoxError, errors, lexer::Token};
 
 use super::Analyzer;
 
@@ -42,7 +42,7 @@ impl Default for VariableAnalyzer {
 impl Analyzer for VariableAnalyzer {}
 
 impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
-    fn visit_assign(&mut self, ident: &crate::lexer::Token, value: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Vec<LoxError> {
         let mut errs = self.visit_expr(value);
 
         for scope in self.scopes.iter().rev() {
@@ -59,27 +59,27 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_binary(&mut self, left: &crate::ast::Expr, _op: &crate::lexer::Token, right: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_binary(&mut self, left: &Expr, _op: &Token, right: &Expr) -> Vec<LoxError> {
         vec![
             self.visit_expr(left),
             self.visit_expr(right),
         ].into_iter().flatten().collect()
     }
 
-    fn visit_call(&mut self, callee: &crate::ast::Expr, args: &[crate::ast::Expr], _close: &crate::lexer::Token) -> Vec<LoxError> {
+    fn visit_call(&mut self, callee: &Expr, args: &[Expr], _close: &Token) -> Vec<LoxError> {
         vec![
             self.visit_expr(callee),
             args.iter().flat_map(|arg| self.visit_expr(arg)).collect(),
         ].into_iter().flatten().collect()
     }
 
-    fn visit_get(&mut self, object: &crate::ast::Expr, _property: &crate::lexer::Token) -> Vec<LoxError> {
+    fn visit_get(&mut self, object: &Expr, _property: &Token) -> Vec<LoxError> {
         vec![
             self.visit_expr(object),
         ].into_iter().flatten().collect()
     }
 
-    fn visit_fun_expr(&mut self, _token: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[crate::ast::Stmt]) -> Vec<LoxError> {
+    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
         self.scopes.push(HashMap::new());
 
         for param in params {
@@ -93,7 +93,7 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_grouping(&mut self, expr: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_grouping(&mut self, expr: &Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }
 
@@ -101,21 +101,21 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         Vec::new()
     }
 
-    fn visit_logical(&mut self, left: &crate::ast::Expr, _op: &crate::lexer::Token, right: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_logical(&mut self, left: &Expr, _op: &Token, right: &Expr) -> Vec<LoxError> {
         vec![
             self.visit_expr(left),
             self.visit_expr(right)
         ].into_iter().flatten().collect()
     }
 
-    fn visit_set(&mut self, object: &crate::ast::Expr, _property: &crate::lexer::Token, value: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_set(&mut self, object: &Expr, _property: &Token, value: &Expr) -> Vec<LoxError> {
         vec![
             self.visit_expr(object),
             self.visit_expr(value),
         ].into_iter().flatten().collect()
     }
 
-    fn visit_this(&mut self, keyword: &crate::lexer::Token) -> Vec<LoxError> {
+    fn visit_this(&mut self, keyword: &Token) -> Vec<LoxError> {
         for scope in self.scopes.iter().rev() {
             if scope.contains_key("this") {
                 return vec![];
@@ -128,11 +128,11 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         )]
     }
 
-    fn visit_unary(&mut self, _op: &crate::lexer::Token, expr: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_unary(&mut self, _op: &Token, expr: &Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }
 
-    fn visit_var_ref(&mut self, name: &crate::lexer::Token) -> Vec<LoxError> {
+    fn visit_var_ref(&mut self, name: &Token) -> Vec<LoxError> {
         if self.scopes.last().and_then(|s| s.get(name.lexeme()).map(|v| !(*v))).unwrap_or_default() {
             return vec![errors::user(
                 "Variable references itself during initialization.",
@@ -158,7 +158,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         Vec::new()
     }
 
-    fn visit_block(&mut self, stmts: &[crate::ast::Stmt]) -> Vec<LoxError> {
+    fn visit_block(&mut self, stmts: &[Stmt]) -> Vec<LoxError> {
         self.scopes.push(HashMap::new());
         
         let mut errs = Vec::new();
@@ -171,28 +171,34 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_class(&mut self, name: &crate::lexer::Token, methods: &[crate::ast::Stmt]) -> Vec<LoxError> {
+    fn visit_class(&mut self, name: &Token, statics: &[Stmt], methods: &[Stmt]) -> Vec<LoxError> {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
         let parent_class = self.current_class.clone();
         self.current_class = Some(name.clone());
 
+        let errs: Vec<LoxError> = statics.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect();
+
         self.scopes.push(HashMap::new());
         self.declare("this");
         self.initialize("this");
 
-        let errs = methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect();
+        let errs = vec![
+            errs,
+            methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect()
+        ].into_iter().flatten().collect();
+        
         self.scopes.pop();
         self.current_class = parent_class;
 
         errs
     }
 
-    fn visit_expr_stmt(&mut self, expr: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_expr_stmt(&mut self, expr: &Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }
 
-    fn visit_fun_def(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[crate::ast::Stmt]) -> Vec<LoxError> {
+    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
         
@@ -214,7 +220,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_if(&mut self, expr: &crate::ast::Expr, then_branch: &crate::ast::Stmt, else_branch: Option<&crate::ast::Stmt>) -> Vec<LoxError> {
+    fn visit_if(&mut self, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Vec<LoxError> {
         vec![
             self.visit_expr(expr),
             self.visit_stmt(then_branch),
@@ -222,11 +228,11 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
-    fn visit_print(&mut self, expr: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_print(&mut self, expr: &Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }
 
-    fn visit_return(&mut self, token: &crate::lexer::Token, expr: Option<&crate::ast::Expr>) -> Vec<LoxError> {
+    fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> Vec<LoxError> {
         match &self.current_function {
             Some(fun) if fun.lexeme() == "init" && self.current_class.is_some() && expr.is_some() => {
                 vec![errors::user(
@@ -242,7 +248,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         }
     }
 
-    fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &crate::ast::Expr) -> Vec<LoxError> {
+    fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Vec<LoxError> {
         let errs = if self.scopes.last().map(|s| s.contains_key(name.lexeme())).unwrap_or_default() {
             vec![errors::user(
                 &format!("Variable '{}' is already defined in this scope, duplicate declaration found at {}.", name.lexeme(), name.location()),
@@ -261,7 +267,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_while(&mut self, expr: &crate::ast::Expr, body: &crate::ast::Stmt) -> Vec<LoxError> {
+    fn visit_while(&mut self, expr: &Expr, body: &Stmt) -> Vec<LoxError> {
         vec![
             self.visit_expr(expr),
             self.visit_stmt(body),

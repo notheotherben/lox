@@ -186,10 +186,23 @@ impl Parser {
             Some(Token::Class(..)) => {
                 let name = rd_consume!(context, Identifier, "Expected a class name here", "Make sure that you have provided a valid class name here.")?;
                 rd_consume!(context, LeftBrace, "Expected a left brace '{' after the class name", "Make sure that you have provided a left brace '{' here.")?;
-                let methods = Self::functions(context)?;
+
+                let mut methods = Vec::new();
+                let mut static_methods = Vec::new();
+                
+                while !matches!(context.tokens.peek(), Some(Token::RightBrace(..))) {
+                    if rd_matches!(context, Class).is_some() {
+                        let fun = Self::function(context)?;
+                        static_methods.push(fun);
+                    } else {
+                        let fun = Self::function(context)?;
+                        methods.push(fun);
+                    }
+                }
+                
                 rd_consume!(context, RightBrace, "Expected a right brace '}' after the class body", "Make sure that you have provided a right brace '}' here.")?;
 
-                Ok(Stmt::Class(name, methods))
+                Ok(Stmt::Class(name, static_methods, methods))
             },
             Some(Token::Fun(..)) => {
                 Self::function(context)
@@ -215,8 +228,6 @@ impl Parser {
             _ => Self::statement(context)
         } 
     });
-
-    rd_term!(functions := function* ...RightBrace => Vec<Stmt>);
 
     rd_term!(function(context) :=> Stmt : {
         rd_consume!(context, ident@Identifier => {

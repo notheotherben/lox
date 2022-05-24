@@ -87,10 +87,16 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_class(&mut self, name: &crate::lexer::Token, methods: &[Stmt]) -> String {
+    fn visit_class(&mut self, name: &crate::lexer::Token, statics: &[Stmt], methods: &[Stmt]) -> String {
         let mut result = String::new();
         result.push_str("(class ");
         result.push_str(name.lexeme());
+
+        for method in statics {
+            result.push_str(" class:");
+            result.push_str(&self.visit_stmt(method));
+        }
+
         for method in methods {
             result.push(' ');
             result.push_str(&self.visit_stmt(method));

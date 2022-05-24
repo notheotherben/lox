@@ -154,6 +154,12 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_get(&mut self, obj: &Expr, property: &Token) -> Result<Value, LoxError> {
         let obj = self.visit_expr(obj)?;
         match obj {
+            Value::Class(class) => {
+                class.get(property.lexeme()).ok_or_else(|| errors::user(
+                    &format!("Class `{}` does not have a static property `{}` at {}.", class.name(), property.lexeme(), property.location()),
+                    "Make sure that you are attempting to access a static property that exists on this class object."
+                ))
+            },
             Value::Instance(instance) => {
                 instance.get(property)
             },
@@ -268,9 +274,19 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         result
     }
 
-    fn visit_class(&mut self, name: &Token, methods: &[Stmt]) -> Result<Value, LoxError> {
+    fn visit_class(&mut self, name: &Token, statics: &[Stmt], methods: &[Stmt]) -> Result<Value, LoxError> {
         self.env.define(name.lexeme(), Value::Nil);
         let mut class = Class::new(name.lexeme());
+
+        for method in statics {
+            match method {
+                Stmt::Fun(name, params, body) => {
+                    let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
+                    class.set(name.lexeme(), Value::Function(fun));
+                },
+                _ => panic!("We received an unexpected statement in a class definition: {:?}", method)
+            }
+        }
 
         for method in methods {
             match method {
@@ -532,6 +548,28 @@ mod tests {
             assert(cake.flavor == "German chocolate", "The constructor should be able to set the class properties.");
 
             assert(cake.init("Vanilla") == cake, "The constructor should return the instance if it is invoked directly.");
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn class_static_methods() {
+        let lexer = Scanner::new(r#"
+            class Cake {
+                class flavor() {
+                    return "German chocolate";
+                }
+            }
+
+            assert(Cake.flavor() == "German chocolate", "The static method should be addressable.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {
