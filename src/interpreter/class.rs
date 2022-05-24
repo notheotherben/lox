@@ -45,7 +45,7 @@ impl Instance {
 
     pub fn get(&self, property: &Token) -> Result<Value, LoxError> {
         self.props.lock().unwrap().get(property.lexeme()).cloned().or_else(|| {
-            self.class.methods.get(property.lexeme()).cloned().map(|fun| Value::Method(fun, self.clone()))
+            self.class.methods.get(property.lexeme()).cloned().map(|fun| Value::Function(fun.bind(Value::Instance(self.clone()))))
         }).ok_or_else(|| errors::user(
             &format!("{} does not have a property `{}` at {}.", self.class, property.lexeme(), property.location()),
             "Make sure that you are attempting to access a property which exists on this instance."

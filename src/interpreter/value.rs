@@ -11,7 +11,6 @@ pub enum Value {
     Number(f64),
     String(String),
     Function(Fun),
-    Method(Fun, Instance),
     Class(Rc<Class>),
     Instance(Instance),
 }
@@ -44,7 +43,6 @@ impl std::fmt::Display for Value {
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
             Value::Function(fun) => write!(f, "{}", fun),
-            Value::Method(fun, instance) => write!(f, "{}.{}", instance, fun),
             Value::Class(class) => write!(f, "{}", class),
             Value::Instance(instance) => write!(f, "{}", instance)
         }

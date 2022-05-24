@@ -1,0 +1,10 @@
+class Cake {
+  taste() {
+    var adjective = "delicious";
+    return "The " + this.flavor + " cake is " + adjective + "!";
+  }
+}
+
+var cake = Cake();
+cake.flavor = "German chocolate";
+assert(cake.taste() == "The German chocolate cake is delicious!", "The method should be able to access its local context");

@@ -39,6 +39,13 @@ impl Fun {
             Fun::Closure(closure) => closure.call(interpreter, args),
         }
     }
+
+    pub fn bind(&self, this: Value) -> Self {
+        match self {
+            Fun::Native(fun) => Fun::Native(fun.clone()),
+            Fun::Closure(fun) => Fun::Closure(fun.bind(this)),
+        }
+    }
 }
 
 impl Display for Fun {
@@ -124,5 +131,12 @@ impl Closure {
         interpreter.returning = None;
 
         Ok(result)
+    }
+
+    pub fn bind(&self, this: Value) -> Self {
+        let mut closure = self.closure.branch();
+        closure.define("<this>", this);
+
+        Self::new(self.name.clone(), &self.args, &self.body, closure)
     }
 }

@@ -127,21 +127,6 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
                 fun.call(self, evaluated_args)
             },
-            Value::Method(fun, instance) => {
-                if args.len() != fun.arity() {
-                    return Err(errors::user(
-                        &format!("Expected {} arguments but got {} at {}.", fun.arity(), args.len(), close.location()),
-                        "Provide the correct number of arguments to the function call."
-                    ));
-                }
-
-                let mut evaluated_args = Vec::new();
-                for arg in args {
-                    evaluated_args.push(self.visit_expr(arg)?);
-                }
-
-                fun.call(self, evaluated_args)
-            },
             other => Err(errors::user(
                 &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
                 "Make sure that you are attempting to call a function or class object."
@@ -197,6 +182,17 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             _ => Err(errors::user(
                 &format!("Attempted to set a property on a value which is not an instance {}.", property.location()),
                 "Make sure that you are attempting to set a property on an instance or class object."
+            ))
+        }
+    }
+
+    fn visit_this(&mut self, token: &Token) -> Result<Value, LoxError> {
+        if let Some(instance) = self.env.get("<this>") {
+            Ok(instance)
+        } else {
+            Err(errors::user(
+                &format!("Attempted to access `this` at {} but no instance was found.", token.location()),
+                "Make sure that you are attempting to access `this` inside of a class method."
             ))
         }
     }
@@ -471,6 +467,31 @@ mod tests {
 
             var bar = foo.bar;
             assert(bar() == "Bar", "Method should be called and return the correct value when it is raised to a variable.");
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn test_this_reference() {
+        let lexer = Scanner::new(r#"
+            class Cake {
+                taste() {
+                    var adjective = "delicious";
+                    return "The " + this.flavor + " cake is " + adjective + "!";
+                }
+            }
+            
+            var cake = Cake();
+            cake.flavor = "German chocolate";
+            assert(cake.taste() == "The German chocolate cake is delicious!", "The method should be able to access its local context");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {

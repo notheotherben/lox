@@ -111,6 +111,10 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
+    fn visit_this(&mut self, _keyword: &crate::lexer::Token) -> Vec<LoxError> {
+        Vec::new()
+    }
+
     fn visit_unary(&mut self, _op: &crate::lexer::Token, expr: &crate::ast::Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }

@@ -497,7 +497,9 @@ impl Parser {
             Some(Token::False(_)) => Ok(Expr::Literal(Literal::Bool(false))),
             Some(Token::True(_)) => Ok(Expr::Literal(Literal::Bool(true))),
             Some(Token::Nil(_)) => Ok(Expr::Literal(Literal::Nil)),
-
+            Some(this@Token::This(_)) => {
+                Ok(Expr::This(this))
+            },
             Some(Token::Number(_, lexeme)) => {
                 let value = lexeme.parse().map_err(|e| errors::user_with_internal(
                     &format!("Unable to parse number '{}'.", lexeme),

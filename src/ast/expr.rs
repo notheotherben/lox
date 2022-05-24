@@ -13,6 +13,7 @@ pub enum Expr {
     Literal(Literal),
     Logical(Box<Expr>, Token, Box<Expr>),
     Set(Box<Expr>, Token, Box<Expr>),
+    This(Token),
     Unary(Token, Box<Expr>),
     Var(Token),
 }
@@ -47,6 +48,9 @@ pub trait ExprVisitor<T> {
             Expr::Set(obj, property, value) => {
                 self.visit_set(obj, property, value)
             },
+            Expr::This(token) => {
+                self.visit_this(token)
+            },
             Expr::Unary(op, expr) => {
                 self.visit_unary(op, expr)
             },
@@ -73,6 +77,8 @@ pub trait ExprVisitor<T> {
     fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> T;
 
     fn visit_set(&mut self, obj: &Expr, property: &Token, value: &Expr) -> T;
+
+    fn visit_this(&mut self, token: &Token) -> T;
 
     fn visit_unary(&mut self, op: &Token, expr: &Expr) -> T;
 
