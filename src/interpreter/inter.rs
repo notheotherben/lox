@@ -1,21 +1,30 @@
-use crate::{ast::{StmtVisitor, Stmt}, LoxError, errors};
+use crate::{ast::{StmtVisitor, Stmt}, LoxError, errors, analysis::analyze};
 
 use super::{env::Environment, Value, Fun};
 
 #[derive(Debug, Clone)]
 pub struct Interpreter {
-    pub (crate) env: Environment,
-    pub (crate) breaking: bool,
-    pub (crate) returning: Option<Value>,
+    pub (super) env: Environment,
+    pub (super) breaking: bool,
+    pub (super) returning: Option<Value>,
 }
 
 impl Interpreter {
-    pub fn interpret(&mut self, stmts: &[Stmt]) -> Result<(), LoxError> {
-        for stmt in stmts.iter() {
-            self.visit_stmt(stmt)?;
+    pub fn interpret(&mut self, stmts: &[Stmt]) -> Vec<LoxError> {
+        let mut errs = analyze(stmts);
+        if errs.is_empty() {
+            for stmt in stmts.iter() {
+                match self.visit_stmt(stmt) {
+                    Ok(_) => (),
+                    Err(err) => {
+                        errs.push(err);
+                        break
+                    },
+                }
+            }
         }
 
-        Ok(())
+        errs
     }
 }
 

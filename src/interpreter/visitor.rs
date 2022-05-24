@@ -270,6 +270,8 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
 #[cfg(test)]
 mod tests {
+    use core::panic;
+
     use crate::{lexer::Scanner, ast::Parser};
 
     use super::*;
@@ -301,7 +303,9 @@ mod tests {
         assert!(errs.is_empty(), "no errors");
 
         let mut interpreter = Interpreter::default();
-        interpreter.interpret(&tree).expect("no errors");
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
     }
 
     #[test]
@@ -326,6 +330,8 @@ mod tests {
         assert!(errs.is_empty(), "no errors");
 
         let mut interpreter = Interpreter::default();
-        interpreter.interpret(&tree).expect("no errors");
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
     }
 }

@@ -66,7 +66,10 @@ fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     }
 
     if !had_error {
-        interpreter.interpret(&stmts)?;
+        let errs = interpreter.interpret(&stmts);
+        for err in errs {
+            eprintln!("{}", err);
+        }
     }
 
     Ok(())
