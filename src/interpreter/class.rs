@@ -14,6 +14,10 @@ impl Class {
     pub fn new<S: Into<String>>(name: S) -> Self {
         Self { name: name.into(), methods: Default::default() }
     }
+
+    pub fn define<S: Into<String>>(&mut self, name: S, fun: Fun) {
+        self.methods.insert(name.into(), fun);
+    }
 }
 
 impl Display for Class {
@@ -40,7 +44,9 @@ impl Instance {
     }
 
     pub fn get(&self, property: &Token) -> Result<Value, LoxError> {
-        self.props.lock().unwrap().get(property.lexeme()).cloned().ok_or_else(|| errors::user(
+        self.props.lock().unwrap().get(property.lexeme()).cloned().or_else(|| {
+            self.class.methods.get(property.lexeme()).cloned().map(|fun| Value::Method(fun, self.clone()))
+        }).ok_or_else(|| errors::user(
             &format!("{} does not have a property `{}` at {}.", self.class, property.lexeme(), property.location()),
             "Make sure that you are attempting to access a property which exists on this instance."
         ))

@@ -102,7 +102,17 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<Value, LoxError> {
         match self.visit_expr(callee)? {
-            Value::Callable(fun) => {
+            Value::Class(class) => {
+                if !args.is_empty() {
+                    return Err(errors::user(
+                        &format!("Class instantiation expects no arguments, but got {} at {}.", args.len(), close.location()),
+                        "Do not provide any arguments to the class constructor."
+                    ));
+                }
+
+                Ok(Value::Instance(Instance::new(class)))
+            },
+            Value::Function(fun) => {
                 if args.len() != fun.arity() {
                     return Err(errors::user(
                         &format!("Expected {} arguments but got {} at {}.", fun.arity(), args.len(), close.location()),
@@ -117,15 +127,20 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
                 fun.call(self, evaluated_args)
             },
-            Value::Class(class) => {
-                if !args.is_empty() {
+            Value::Method(fun, instance) => {
+                if args.len() != fun.arity() {
                     return Err(errors::user(
-                        &format!("Class instantiation expects no arguments, but got {} at {}.", args.len(), close.location()),
-                        "Do not provide any arguments to the class constructor."
+                        &format!("Expected {} arguments but got {} at {}.", fun.arity(), args.len(), close.location()),
+                        "Provide the correct number of arguments to the function call."
                     ));
                 }
 
-                Ok(Value::Instance(Instance::new(class)))
+                let mut evaluated_args = Vec::new();
+                for arg in args {
+                    evaluated_args.push(self.visit_expr(arg)?);
+                }
+
+                fun.call(self, evaluated_args)
             },
             other => Err(errors::user(
                 &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
@@ -137,7 +152,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
         let fun = Fun::closure("@anonymous", params, body, self.env.clone());
-        Ok(Value::Callable(fun))
+        Ok(Value::Function(fun))
     }
 
     fn visit_get(&mut self, obj: &Expr, property: &Token) -> Result<Value, LoxError> {
@@ -250,6 +265,19 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         self.env.define(name.lexeme(), Value::Nil);
         let mut class = Class::new(name.lexeme());
 
+        for method in methods {
+            match method {
+                Stmt::Fun(name, params, body) => {
+                    let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
+                    class.define(name.lexeme(), fun);
+                },
+                _ => return Err(errors::system(
+                    &format!("Unexpected statement in class definition: {:?}", method),
+                    "This should not have occurred, please report the issue along with sample code."
+                ))
+            }
+        }
+
         self.env.assign(name.lexeme(), Value::Class(Rc::new(class)))?;
         Ok(Value::Nil)
     }
@@ -262,7 +290,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
         let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
-        self.env.define(name.lexeme(), Value::Callable(fun));
+        self.env.define(name.lexeme(), Value::Function(fun));
         Ok(Value::Nil)
     }
 
@@ -416,6 +444,33 @@ mod tests {
             var foo = Foo();
             foo.bar = "baz";
             assert(foo.bar == "baz", "Property should be set and read correctly.");
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn test_class_methods() {
+        let lexer = Scanner::new(r#"
+            class Foo {
+                bar() {
+                    return "Bar";
+                }
+            }
+            print Foo;
+
+            var foo = Foo();
+            assert(foo.bar() == "Bar", "Method should be called and return the correct value.");
+
+            var bar = foo.bar;
+            assert(bar() == "Bar", "Method should be called and return the correct value when it is raised to a variable.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {

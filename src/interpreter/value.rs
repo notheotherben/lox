@@ -10,7 +10,8 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Callable(Fun),
+    Function(Fun),
+    Method(Fun, Instance),
     Class(Rc<Class>),
     Instance(Instance),
 }
@@ -42,7 +43,8 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
-            Value::Callable(fun) => write!(f, "{}", fun),
+            Value::Function(fun) => write!(f, "{}", fun),
+            Value::Method(fun, instance) => write!(f, "{}.{}", instance, fun),
             Value::Class(class) => write!(f, "{}", class),
             Value::Instance(instance) => write!(f, "{}", instance)
         }
