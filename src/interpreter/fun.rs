@@ -2,7 +2,7 @@ use std::{fmt::{Display, Debug}, rc::Rc};
 
 use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}, errors};
 
-use super::{Value, Interpreter, env::Environment};
+use super::{Value, Interpreter, env::Environment, class::Instance};
 
 #[derive(Clone)]
 pub enum Fun {
@@ -55,7 +55,7 @@ impl Fun {
         }
     }
 
-    pub fn bind(&self, this: Value) -> Self {
+    pub fn bind(&self, this: Instance) -> Self {
         match self {
             Fun::Native(fun) => Fun::Native(fun.clone()),
             Fun::Initializer(closure) => Fun::Initializer(closure.bind(this)),
@@ -149,9 +149,12 @@ impl Closure {
         Ok(result)
     }
 
-    pub fn bind(&self, this: Value) -> Self {
+    pub fn bind(&self, this: Instance) -> Self {
         let mut closure = self.closure.branch();
-        closure.define("this", this);
+        closure.define("this", Value::Instance(this.clone()));
+        if let Some(superclass) = this.class().superclass() {
+            closure.define("super", Value::Class(superclass));
+        }
 
         Self::new(self.name.clone(), &self.args, &self.body, closure)
     }

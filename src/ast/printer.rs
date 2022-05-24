@@ -1,17 +1,19 @@
+use crate::lexer::Token;
+
 use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt};
 
 pub struct AstPrinter{}
 
 impl ExprVisitor<String> for AstPrinter {
-    fn visit_assign(&mut self, ident: &crate::lexer::Token, value: &Expr) -> String {
+    fn visit_assign(&mut self, ident: &Token, value: &Expr) -> String {
         format!("(= {} {})", ident.lexeme(), self.visit_expr(value))
     }
 
-    fn visit_binary(&mut self, left: &Expr, op: &crate::lexer::Token, right: &Expr) -> String {
+    fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> String {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
-    fn visit_call(&mut self, callee: &Expr, args: &[Expr], _close: &crate::lexer::Token) -> String {
+    fn visit_call(&mut self, callee: &Expr, args: &[Expr], _close: &Token) -> String {
         let mut s = format!("(call {}", self.visit_expr(callee));
         for arg in args {
             s.push(' ');
@@ -21,11 +23,11 @@ impl ExprVisitor<String> for AstPrinter {
         s
     }
 
-    fn visit_get(&mut self, obj: &Expr, name: &crate::lexer::Token) -> String {
+    fn visit_get(&mut self, obj: &Expr, name: &Token) -> String {
         format!("{}.{}", self.visit_expr(obj), name.lexeme())
     }
 
-    fn visit_fun_expr(&mut self, _token: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
+    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> String {
         let mut s = "(fun @anonymous".to_string();
         for param in params {
             s.push(' ');
@@ -50,23 +52,27 @@ impl ExprVisitor<String> for AstPrinter {
         }
     }
 
-    fn visit_logical(&mut self, left: &Expr, op: &crate::lexer::Token, right: &Expr) -> String {
+    fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> String {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
-    fn visit_set(&mut self, obj: &Expr, name: &crate::lexer::Token, value: &Expr) -> String {
+    fn visit_set(&mut self, obj: &Expr, name: &Token, value: &Expr) -> String {
         format!("(set {}.{} {})", self.visit_expr(obj), name.lexeme(), self.visit_expr(value))
     }
 
-    fn visit_this(&mut self, _token: &crate::lexer::Token) -> String {
+    fn visit_super(&mut self, _token: &Token, method: &Token) -> String {
+        format!("super.{}", method.lexeme())
+    }
+
+    fn visit_this(&mut self, _token: &Token) -> String {
         "this".to_string()
     }
 
-    fn visit_unary(&mut self, op: &crate::lexer::Token, expr: &Expr) -> String {
+    fn visit_unary(&mut self, op: &Token, expr: &Expr) -> String {
         format!("({} {})", op.lexeme(), self.visit_expr(expr))
     }
 
-    fn visit_var_ref(&mut self, name: &crate::lexer::Token) -> String {
+    fn visit_var_ref(&mut self, name: &Token) -> String {
         name.lexeme().to_string()
     }
 }
@@ -87,10 +93,15 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_class(&mut self, name: &crate::lexer::Token, statics: &[Stmt], methods: &[Stmt]) -> String {
+    fn visit_class(&mut self, name: &Token, superclass: Option<&Expr>, statics: &[Stmt], methods: &[Stmt]) -> String {
         let mut result = String::new();
         result.push_str("(class ");
         result.push_str(name.lexeme());
+
+        if let Some(superclass) = superclass {
+            result.push(' ');
+            result.push_str(&self.visit_expr(superclass));
+        }
 
         for method in statics {
             result.push_str(" class:");
@@ -109,7 +120,7 @@ impl StmtVisitor<String> for AstPrinter {
         format!("({})", self.visit_expr(expr))
     }
 
-    fn visit_fun_def(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {
+    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> String {
         let mut result = String::new();
         result.push_str("(fun ");
         result.push_str(name.lexeme());
@@ -141,7 +152,7 @@ impl StmtVisitor<String> for AstPrinter {
         format!("(print {})", self.visit_expr(expr))
     }
 
-    fn visit_return(&mut self, _token: &crate::lexer::Token, expr: Option<&Expr>) -> String {
+    fn visit_return(&mut self, _token: &Token, expr: Option<&Expr>) -> String {
         let mut result = String::new();
         result.push_str("(return");
         if let Some(expr) = expr {
@@ -152,7 +163,7 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &Expr) -> String {
+    fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> String {
         format!("(var {} {})", name.lexeme(), self.visit_expr(expr))
     }
 

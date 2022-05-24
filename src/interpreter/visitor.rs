@@ -118,7 +118,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                         evaluated_args.push(self.visit_expr(arg)?);
                     }
 
-                    init.bind(Value::Instance(instance.clone())).call(self, evaluated_args)?;
+                    init.bind(instance.clone()).call(self, evaluated_args)?;
                 }
 
                 Ok(Value::Instance(instance))
@@ -203,6 +203,20 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
+    fn visit_super(&mut self, token: &Token, method: &Token) -> Result<Value, LoxError> {
+        if let Some(Value::Instance(instance)) = self.env.get("this") {
+            Ok(Value::Function(instance.class().superclass().and_then(|c| c.find_method(method.lexeme())).ok_or_else(|| errors::user(
+                &format!("Attempted to call a method `{}` on a superclass which does not have a method at {}.", method.lexeme(), token.location()),
+                "Make sure that you are attempting to call a method on a superclass which exists."
+            ))?.bind(instance)))
+        } else {
+            Err(errors::user(
+                &format!("Attempted to access `super` at {} but no instance was found.", token.location()),
+                "Make sure that you are attempting to access `super` inside of a class method."
+            ))
+        }
+    }
+
     fn visit_this(&mut self, token: &Token) -> Result<Value, LoxError> {
         if let Some(instance) = self.env.get("this") {
             Ok(instance)
@@ -274,9 +288,30 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         result
     }
 
-    fn visit_class(&mut self, name: &Token, statics: &[Stmt], methods: &[Stmt]) -> Result<Value, LoxError> {
+    fn visit_class(&mut self, name: &Token, superclass: Option<&Expr>, statics: &[Stmt], methods: &[Stmt]) -> Result<Value, LoxError> {
+        let superclass = match superclass {
+            Some(Expr::Var(name)) => Some(self.env.get(name.lexeme()).ok_or_else(|| errors::user(
+                &format!("Superclass `{}` is not defined.", name.lexeme()),
+                "Define the superclass before you attempt to define a class."
+            ))?),
+            Some(superclass) => return Err(errors::user(
+                &format!("Superclass `{:?}` is not a class.", superclass),
+                "Make sure that you are providing a class as the superclass."
+            )),
+            None => None,
+        };
+
+        let superclass = match superclass {
+            Some(Value::Class(class)) => Some(class),
+            None => None,
+            _ => return Err(errors::user(
+                &format!("Superclass `{:?}` is not a class.", superclass),
+                "Make sure that you are providing a class as the superclass."
+            ))
+        };
+        
         self.env.define(name.lexeme(), Value::Nil);
-        let mut class = Class::new(name.lexeme());
+        let mut class = Class::new(name.lexeme(), superclass);
 
         for method in statics {
             match method {
@@ -570,6 +605,36 @@ mod tests {
             }
 
             assert(Cake.flavor() == "German chocolate", "The static method should be addressable.");
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn inheritance() {
+        let lexer = Scanner::new(r#"
+            class Cake {
+                init(flavor) {
+                    this.flavor = flavor;
+                }
+            }
+
+            class VanillaCake < Cake {
+                init(flavor) {
+                    super.init(flavor);
+                    this.flavor = "Vanilla " + flavor;
+                }
+            }
+
+            var vanilla_cake = VanillaCake("German chocolate");
+            assert(vanilla_cake.flavor == "Vanilla German chocolate", "The constructor should be able to set the class properties.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {

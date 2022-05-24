@@ -6,7 +6,7 @@ use super::*;
 pub enum Stmt {
     Block(Vec<Stmt>),
     Break,
-    Class(Token, Vec<Stmt>, Vec<Stmt>),
+    Class(Token, Option<Expr>, Vec<Stmt>, Vec<Stmt>),
     Expression(Expr),
     Fun(Token, Vec<Token>, Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
@@ -21,7 +21,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
         match stmt {
             Stmt::Block(stmts) => self.visit_block(stmts),
             Stmt::Break => self.visit_break(),
-            Stmt::Class(name, statics, methods) => self.visit_class(name, statics, methods),
+            Stmt::Class(name, superclass, statics, methods) => self.visit_class(name, superclass.as_ref(), statics, methods),
             Stmt::Expression(expr) => self.visit_expr_stmt(expr),
             Stmt::Fun(name, params, body) => self.visit_fun_def(name, params, body),
             Stmt::If(expr, then_branch, else_branch) => self.visit_if(expr, then_branch, else_branch.as_ref().map(|b| b.as_ref())),
@@ -37,7 +37,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
     
     fn visit_block(&mut self, stmts: &[Stmt]) -> T;
     
-    fn visit_class(&mut self, name: &Token, statics: &[Stmt], methods: &[Stmt]) -> T;
+    fn visit_class(&mut self, name: &Token, superclass: Option<&Expr>, statics: &[Stmt], methods: &[Stmt]) -> T;
 
     fn visit_expr_stmt(&mut self, expr: &Expr) -> T;
     

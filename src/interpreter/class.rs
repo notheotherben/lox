@@ -7,13 +7,14 @@ use super::{Fun, Value};
 #[derive(Clone, PartialEq)]
 pub struct Class {
     name: String,
+    superclass: Option<Rc<Class>>,
     methods: HashMap<String, Fun>,
     statics: HashMap<String, Value>,
 }
 
 impl Class {
-    pub fn new<S: Into<String>>(name: S) -> Self {
-        Self { name: name.into(), methods: Default::default(), statics: Default::default() }
+    pub fn new<S: Into<String>>(name: S, superclass: Option<Rc<Class>>) -> Self {
+        Self { name: name.into(), superclass, methods: Default::default(), statics: Default::default() }
     }
 
     pub fn name(&self) -> &str {
@@ -25,7 +26,7 @@ impl Class {
     }
 
     pub fn find_method(&self, name: &str) -> Option<Fun> {
-        self.methods.get(name).cloned()
+        self.methods.get(name).cloned().or_else(|| self.superclass.clone().and_then(|s| s.find_method(name)))
     }
 
     pub fn set<S: Into<String>>(&mut self, name: S, value: Value) {
@@ -34,6 +35,10 @@ impl Class {
 
     pub fn get(&self, name: &str) -> Option<Value> {
         self.statics.get(name).cloned()
+    }
+
+    pub fn superclass(&self) -> Option<Rc<Class>> {
+        self.superclass.clone()
     }
 }
 
@@ -62,7 +67,7 @@ impl Instance {
 
     pub fn get(&self, property: &Token) -> Result<Value, LoxError> {
         self.props.lock().unwrap().get(property.lexeme()).cloned().or_else(|| {
-            self.class.find_method(property.lexeme()).map(|fun| Value::Function(fun.bind(Value::Instance(self.clone()))))
+            self.class.find_method(property.lexeme()).map(|fun| Value::Function(fun.bind(self.clone())))
         }).ok_or_else(|| errors::user(
             &format!("{} does not have a property `{}` at {}.", self.class, property.lexeme(), property.location()),
             "Make sure that you are attempting to access a property which exists on this instance."
@@ -72,6 +77,10 @@ impl Instance {
     pub fn set(&mut self, property: &Token, value: Value) -> Result<(), LoxError> {
         self.props.lock().unwrap().insert(property.lexeme().to_string(), value);
         Ok(())
+    }
+
+    pub fn class(&self) -> Rc<Class> {
+        self.class.clone()
     }
 }
 

@@ -115,6 +115,10 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
+    fn visit_super(&mut self, _keyword: &Token, _method: &Token) -> Vec<LoxError> {
+        Vec::new()
+    }
+
     fn visit_this(&mut self, keyword: &Token) -> Vec<LoxError> {
         for scope in self.scopes.iter().rev() {
             if scope.contains_key("this") {
@@ -171,23 +175,37 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_class(&mut self, name: &Token, statics: &[Stmt], methods: &[Stmt]) -> Vec<LoxError> {
+    fn visit_class(&mut self, name: &Token, superclass: Option<&Expr>, statics: &[Stmt], methods: &[Stmt]) -> Vec<LoxError> {
+        let errs = if let Some(superclass) = superclass {
+            self.visit_expr(superclass)
+        } else {
+            Vec::new()
+        };
+
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
         let parent_class = self.current_class.clone();
         self.current_class = Some(name.clone());
 
-        let errs: Vec<LoxError> = statics.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect();
+        let errs: Vec<LoxError> = vec![
+            errs,
+            statics.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect()
+        ].into_iter().flatten().collect();
 
         self.scopes.push(HashMap::new());
         self.declare("this");
         self.initialize("this");
 
+        if superclass.is_some() {
+            self.declare("super");
+            self.initialize("super");
+        }
+
         let errs = vec![
             errs,
             methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect()
         ].into_iter().flatten().collect();
-        
+
         self.scopes.pop();
         self.current_class = parent_class;
 

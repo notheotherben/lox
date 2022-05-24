@@ -185,6 +185,13 @@ impl Parser {
         match rd_matches!(context, Class | Fun | Var) {
             Some(Token::Class(..)) => {
                 let name = rd_consume!(context, Identifier, "Expected a class name here", "Make sure that you have provided a valid class name here.")?;
+
+                let superclass = if rd_matches!(context, Less).is_some() {
+                    Some(Expr::Var(rd_consume!(context, Identifier, "Expected a superclass name here", "Make sure that you have provided a valid superclass name here.")?))
+                } else {
+                    None
+                };
+
                 rd_consume!(context, LeftBrace, "Expected a left brace '{' after the class name", "Make sure that you have provided a left brace '{' here.")?;
 
                 let mut methods = Vec::new();
@@ -202,7 +209,7 @@ impl Parser {
                 
                 rd_consume!(context, RightBrace, "Expected a right brace '}' after the class body", "Make sure that you have provided a right brace '}' here.")?;
 
-                Ok(Stmt::Class(name, static_methods, methods))
+                Ok(Stmt::Class(name, superclass, static_methods, methods))
             },
             Some(Token::Fun(..)) => {
                 Self::function(context)
@@ -510,6 +517,11 @@ impl Parser {
             Some(Token::Nil(_)) => Ok(Expr::Literal(Literal::Nil)),
             Some(this@Token::This(_)) => {
                 Ok(Expr::This(this))
+            },
+            Some(sup@Token::Super(_)) => {
+                rd_consume!(context, Dot, "Expected a `.` after the `super` keyword", "Make sure that you call methods on the superclass using `super.method()`.")?;
+                let property = rd_consume!(context, property@Identifier => property, "Expected a property name after the `.`", "Make sure that you call methods on the superclass using `super.method()`.")?;
+                Ok(Expr::Super(sup, property))
             },
             Some(Token::Number(_, lexeme)) => {
                 let value = lexeme.parse().map_err(|e| errors::user_with_internal(
