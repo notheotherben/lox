@@ -53,6 +53,24 @@ macro_rules! rd_term {
         });
     };
 
+    ($name:ident := $item:ident* ... $($term:ident)|+  => Vec<$ret:ty>) => {
+        rd_term!($name(context) :=> Vec<$ret> : {
+            let mut items = Vec::new();
+    
+            while !matches!(context.tokens.peek(), Some($(Token::$term(..))|+)) {
+                match Self::$item(context) {
+                    Ok(item) => items.push(item),
+                    Err(err) => {
+                        Self::synchronize(context);
+                        return Err(err);
+                    }
+                }
+            }
+
+            Ok(items)
+        });
+    };
+
     ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
         rd_term!($name(context) :=> Expr : {
             let left = Self::$left(context)?;
@@ -164,7 +182,18 @@ impl Parser {
     }
 
     rd_term!(declaration(context) :=> Stmt : {
-        match rd_matches!(context, Var | Fun) {
+        match rd_matches!(context, Class | Fun | Var) {
+            Some(Token::Class(..)) => {
+                let name = rd_consume!(context, Identifier, "Expected a class name here", "Make sure that you have provided a valid class name here.")?;
+                rd_consume!(context, LeftBrace, "Expected a left brace '{' after the class name", "Make sure that you have provided a left brace '{' here.")?;
+                let methods = Self::functions(context)?;
+                rd_consume!(context, RightBrace, "Expected a right brace '}' after the class body", "Make sure that you have provided a right brace '}' here.")?;
+
+                Ok(Stmt::Class(name, methods))
+            },
+            Some(Token::Fun(..)) => {
+                Self::function(context)
+            },
             Some(Token::Var(..)) => {
                 rd_consume!(context, ident@Identifier => {
                     let init = if let Some(Token::Equal(_)) = context.tokens.peek() {
@@ -183,29 +212,32 @@ impl Parser {
                     "Expected an identifier to be provided after 'var'",
                     "Provide a variable name after the `var` keyword.")?
             },
-            Some(Token::Fun(..)) => {
-                rd_consume!(context, ident@Identifier => {
-                    rd_consume!(context, LeftParen, "Expected '(' after function name", "Make sure that you have a '(' after the function name.")?;
-                    
-                    let params = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
-                        Vec::new()
-                    } else {
-                        Self::parameters(context)?   
-                    };
-
-                    rd_consume!(context, RightParen, "Expected ')' after the function parameters", "Make sure that you have a ')' after the function parameters.")?;
-
-                    rd_consume!(context, LeftBrace, "Expected '{' after the function parameters", "Make sure that you have a '{' after the function parameters.")?;
-        
-                    let body = Self::block(context)?;
-
-                    Ok(Stmt::Fun(ident, params, body))
-                },
-                "Expected an identifier to be provided after 'fun'",
-                "Provide a function name after the `fun` keyword.")?
-            },
             _ => Self::statement(context)
         } 
+    });
+
+    rd_term!(functions := function* ...RightBrace => Vec<Stmt>);
+
+    rd_term!(function(context) :=> Stmt : {
+        rd_consume!(context, ident@Identifier => {
+            rd_consume!(context, LeftParen, "Expected '(' after function name", "Make sure that you have a '(' after the function name.")?;
+            
+            let params = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
+                Vec::new()
+            } else {
+                Self::parameters(context)?   
+            };
+
+            rd_consume!(context, RightParen, "Expected ')' after the function parameters", "Make sure that you have a ')' after the function parameters.")?;
+
+            rd_consume!(context, LeftBrace, "Expected '{' after the function parameters", "Make sure that you have a '{' after the function parameters.")?;
+
+            let body = Self::block(context)?;
+
+            Ok(Stmt::Fun(ident, params, body))
+        },
+        "Expected a function name to be provided when declaring a new function",
+        "Provide a function name here, followed by the function's parameters and body.")?
     });
 
     rd_term!(parameters := Identifier (Comma Identifier)* => Vec<Token>);
@@ -609,5 +641,12 @@ mod tests {
         test_parse("fun f(x, y) { return x + y; }", "(fun f x y (block (return (+ x y))))");
 
         test_parse("var f = fun(a) {};", "(var f (fun @anonymous a (block)))");
+    }
+
+    #[test]
+    fn parse_class_def() {
+        test_parse("class A {}", "(class A)");
+        test_parse("class A { f() {} }", "(class A (fun f (block)))");
+        test_parse("class A { f() {} g() {} }", "(class A (fun f (block)) (fun g (block)))");
     }
 }

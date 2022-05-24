@@ -1,8 +1,8 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, rc::Rc};
 
 use crate::ast::Literal;
 
-use super::Fun;
+use super::{Fun, Class};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -10,7 +10,9 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Callable(Fun)
+    Callable(Fun),
+    Class(Rc<Class>),
+    Instance(Rc<Class>)
 }
 
 impl Value {
@@ -40,7 +42,9 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
             Value::String(s) => write!(f, "{}", s),
-            Value::Callable(fun) => write!(f, "<fn {}>", fun.name()),
+            Value::Callable(fun) => write!(f, "{}", fun),
+            Value::Class(class) => write!(f, "{}", class),
+            Value::Instance(class) => write!(f, "<{}>", class)
         }
     }
 }

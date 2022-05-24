@@ -1,10 +1,12 @@
+mod class;
 mod env;
 mod fun;
 mod inter;
 mod value;
 mod visitor;
 
-pub use fun::{Fun, NativeFun};
+pub use class::Class;
+pub use fun::{Fun, NativeFun, Closure};
 pub use inter::Interpreter;
 pub use value::Value;
 

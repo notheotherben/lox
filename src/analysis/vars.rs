@@ -141,6 +141,13 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
+    fn visit_class(&mut self, name: &crate::lexer::Token, methods: &[crate::ast::Stmt]) -> Vec<LoxError> {
+        self.declare(name.lexeme());
+        self.initialize(name.lexeme());
+        //methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect()
+        Vec::new()
+    }
+
     fn visit_expr_stmt(&mut self, expr: &crate::ast::Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }

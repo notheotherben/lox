@@ -1,4 +1,6 @@
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexer::Token, errors};
+use std::rc::Rc;
+
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexer::Token, errors, interpreter::Class};
 
 use super::{Value, Interpreter, Fun};
 
@@ -109,6 +111,16 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
                 fun.call(self, evaluated_args)
             },
+            Value::Class(class) => {
+                if !args.is_empty() {
+                    return Err(errors::user(
+                        &format!("Class instantiation expects no arguments, but got {} at {}.", args.len(), close.location()),
+                        "Do not provide any arguments to the class constructor."
+                    ));
+                }
+
+                Ok(Value::Instance(class))
+            },
             other => Err(errors::user(
                 &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
                 "Make sure that you are attempting to call a function or class object."
@@ -204,6 +216,14 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
         self.env = parent;
         result
+    }
+
+    fn visit_class(&mut self, name: &Token, methods: &[Stmt]) -> Result<Value, LoxError> {
+        self.env.define(name.lexeme(), Value::Nil);
+        let mut class = Class::new(name.lexeme());
+
+        self.env.assign(name.lexeme(), Value::Class(Rc::new(class)))?;
+        Ok(Value::Nil)
     }
 
     fn visit_expr_stmt(&mut self, expr: &Expr) -> Result<Value, LoxError> {
@@ -328,6 +348,30 @@ mod tests {
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         assert!(errs.is_empty(), "no errors");
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn test_class_instantiation() {
+        let lexer = Scanner::new(r#"
+            class Foo {
+                bar() {
+                    return "Bar";
+                }
+            }
+            print Foo;
+
+            var foo = Foo();
+            print foo;
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
 
         let mut interpreter = Interpreter::default();
         for err in interpreter.interpret(&tree) {

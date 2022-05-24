@@ -74,6 +74,18 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
+    fn visit_class(&mut self, name: &crate::lexer::Token, methods: &[Stmt]) -> String {
+        let mut result = String::new();
+        result.push_str("(class ");
+        result.push_str(name.lexeme());
+        for method in methods {
+            result.push(' ');
+            result.push_str(&self.visit_stmt(method));
+        }
+        result.push(')');
+        result
+    }
+
     fn visit_expr_stmt(&mut self, expr: &Expr) -> String {
         format!("({})", self.visit_expr(expr))
     }
