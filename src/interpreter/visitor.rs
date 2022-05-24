@@ -103,14 +103,25 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<Value, LoxError> {
         match self.visit_expr(callee)? {
             Value::Class(class) => {
-                if !args.is_empty() {
-                    return Err(errors::user(
-                        &format!("Class instantiation expects no arguments, but got {} at {}.", args.len(), close.location()),
-                        "Do not provide any arguments to the class constructor."
-                    ));
+                let instance = Instance::new(class.clone());
+
+                if let Some(init) = class.find_method("init") {
+                    if init.arity() != args.len() {
+                        return Err(errors::user(
+                            &format!("Class init function expects {} arguments, but got {} at {}.", init.arity(), args.len(), close.location()),
+                            "Provide the correct number of arguments to the class's `init` method."
+                        ));
+                    }
+
+                    let mut evaluated_args = Vec::new();
+                    for arg in args {
+                        evaluated_args.push(self.visit_expr(arg)?);
+                    }
+
+                    init.bind(Value::Instance(instance.clone())).call(self, evaluated_args)?;
                 }
 
-                Ok(Value::Instance(Instance::new(class)))
+                Ok(Value::Instance(instance))
             },
             Value::Function(fun) => {
                 if args.len() != fun.arity() {
@@ -492,6 +503,29 @@ mod tests {
             var cake = Cake();
             cake.flavor = "German chocolate";
             assert(cake.taste() == "The German chocolate cake is delicious!", "The method should be able to access its local context");
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn class_constructors() {
+        let lexer = Scanner::new(r#"
+            class Cake {
+                init(flavor) {
+                    this.flavor = flavor;
+                }
+            }
+
+            var cake = Cake("German chocolate");
+            assert(cake.flavor == "German chocolate", "The constructor should be able to set the class properties.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {
