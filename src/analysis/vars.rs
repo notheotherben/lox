@@ -4,11 +4,25 @@ use crate::{ast::{ExprVisitor, StmtVisitor, Stmt, Expr}, LoxError, errors, lexer
 
 use super::Analyzer;
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub (super) enum ClassType {
+    None,
+    Class,
+    Subclass,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub (super) enum FunctionType {
+    None,
+    Function,
+    Initializer,
+}
+
 #[derive(Debug)]
 pub (super) struct VariableAnalyzer {
     pub (super) scopes: Vec<HashMap<String, bool>>,
-    pub (super) current_class: Option<Token>,
-    pub (super) current_function: Option<Token>,
+    pub (super) current_class: ClassType,
+    pub (super) current_function: FunctionType,
 }
 
 impl VariableAnalyzer {
@@ -33,8 +47,8 @@ impl Default for VariableAnalyzer {
 
         Self {
             scopes: vec![globals],
-            current_class: None,
-            current_function: None,
+            current_class: ClassType::None,
+            current_function: FunctionType::None,
         }
     }
 }
@@ -115,8 +129,18 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
-    fn visit_super(&mut self, _keyword: &Token, _method: &Token) -> Vec<LoxError> {
-        Vec::new()
+    fn visit_super(&mut self, keyword: &Token, _method: &Token) -> Vec<LoxError> {
+        match self.current_class {
+            ClassType::None => vec![errors::user(
+                &format!("Cannot use 'super' outside of a class at {}.", keyword.location()),
+                "Make sure you are inside a class, and that you are using 'super' in the correct context.",
+            )],
+            ClassType::Class => vec![errors::user(
+                &format!("Cannot use 'super' in a class with no superclass at {}.", keyword.location()),
+                "Make sure you are inside a class, and that you are using 'super' in the correct context.",
+            )],
+            ClassType::Subclass => Vec::new(),
+        }
     }
 
     fn visit_this(&mut self, keyword: &Token) -> Vec<LoxError> {
@@ -184,8 +208,8 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
 
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
-        let parent_class = self.current_class.clone();
-        self.current_class = Some(name.clone());
+        let parent_class = self.current_class;
+        self.current_class = if superclass.is_some() { ClassType::Subclass } else { ClassType::Class };
 
         let errs: Vec<LoxError> = vec![
             errs,
@@ -220,8 +244,8 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
         
-        let parent_fun = self.current_function.clone();
-        self.current_function = Some(name.clone());
+        let parent_fun = self.current_function;
+        self.current_function = if name.lexeme() == "init" && self.current_class != ClassType::None { FunctionType::Initializer } else { FunctionType::Function };
 
         self.scopes.push(HashMap::new());
 
@@ -251,14 +275,14 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
     }
 
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> Vec<LoxError> {
-        match &self.current_function {
-            Some(fun) if fun.lexeme() == "init" && self.current_class.is_some() && expr.is_some() => {
+        match self.current_function {
+            FunctionType::Initializer if expr.is_some() => {
                 vec![errors::user(
                     &format!("Found an attempt to return a value within a class initializer at {}.", token.location()),
                     "You cannot return a value within a class initializer.",
                 )]
             },
-            None => return vec![errors::user(
+            FunctionType::None => return vec![errors::user(
                 &format!("Return statement used outside of a function at {}.", token.location()),
                 "You can only use the `return` keyword within a function.",
             )],
@@ -298,7 +322,7 @@ mod tests {
     use crate::{lexer::Scanner, ast::Parser, analysis::Analyzer};
 
     #[test]
-    fn test_duplicate_local_variables() {
+    fn duplicate_local_variables() {
         let mut analyzer = super::VariableAnalyzer::default();
 
         let (tree, errs) = Parser::parse(
@@ -318,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn test_this_outside_class_method() {
+    fn this_outside_class_method() {
         let mut analyzer = super::VariableAnalyzer::default();
 
         let (tree, errs) = Parser::parse(
@@ -338,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn test_return_inside_constructor() {
+    fn return_inside_constructor() {
         let mut analyzer = super::VariableAnalyzer::default();
 
         let (tree, errs) = Parser::parse(
@@ -358,5 +382,47 @@ mod tests {
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
         assert_eq!(errs[0].description(), "Found an attempt to return a value within a class initializer at line 4, column 25.");
+    }
+
+    #[test]
+    fn super_outside_class_method() {
+        let mut analyzer = super::VariableAnalyzer::default();
+
+        let (tree, errs) = Parser::parse(
+            &mut Scanner::new(
+                r#"
+                super.a();
+                "#
+            ).filter_map(|t| t.ok())
+        );
+
+        assert!(errs.is_empty(), "no parsing errors");
+
+        let errs = analyzer.analyze(&tree);
+        assert_eq!(errs.len(), 1, "expected 1 error");
+        assert_eq!(errs[0].description(), "Cannot use 'super' outside of a class at line 2, column 17.");
+    }
+
+    #[test]
+    fn super_in_root_class() {
+        let mut analyzer = super::VariableAnalyzer::default();
+
+        let (tree, errs) = Parser::parse(
+            &mut Scanner::new(
+                r#"
+                class A {
+                    init() {
+                        super.a();
+                    }
+                }
+                "#
+            ).filter_map(|t| t.ok())
+        );
+
+        assert!(errs.is_empty(), "no parsing errors");
+
+        let errs = analyzer.analyze(&tree);
+        assert_eq!(errs.len(), 1, "expected 1 error");
+        assert_eq!(errs[0].description(), "Cannot use 'super' in a class with no superclass at line 4, column 25.");
     }
 }

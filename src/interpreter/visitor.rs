@@ -204,16 +204,19 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     }
 
     fn visit_super(&mut self, token: &Token, method: &Token) -> Result<Value, LoxError> {
-        if let Some(Value::Instance(instance)) = self.env.get("this") {
-            Ok(Value::Function(instance.class().superclass().and_then(|c| c.find_method(method.lexeme())).ok_or_else(|| errors::user(
-                &format!("Attempted to call a method `{}` on a superclass which does not have a method at {}.", method.lexeme(), token.location()),
-                "Make sure that you are attempting to call a method on a superclass which exists."
-            ))?.bind(instance)))
-        } else {
-            Err(errors::user(
-                &format!("Attempted to access `super` at {} but no instance was found.", token.location()),
-                "Make sure that you are attempting to access `super` inside of a class method."
-            ))
+        match (self.env.get("this"), self.env.get("super")) {
+            (Some(Value::Instance(instance)), Some(Value::Class(superclass))) => {
+                Ok(Value::Function(superclass.find_method(method.lexeme()).ok_or_else(|| errors::user(
+                    &format!("Attempted to call a method `{}` on a superclass which does not have a method at {}.", method.lexeme(), token.location()),
+                    "Make sure that you are attempting to call a method on a superclass which exists."
+                ))?.bind(instance)))
+            },
+            _ => {
+                Err(errors::user(
+                    &format!("Attempted to access `super` at {} but no instance was found.", token.location()),
+                    "Make sure that you are attempting to access `super` inside of a class method."
+                ))
+            }
         }
     }
 
@@ -323,14 +326,22 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
             }
         }
 
+        let super_env = if let Some(superclass) = class.superclass() {
+            let mut env = self.env.branch();
+            env.define("super", Value::Class(superclass));
+            env
+        } else {
+            self.env.clone()
+        };
+
         for method in methods {
             match method {
                 Stmt::Fun(name, params, body) if name.lexeme() == "init" => {
-                    let fun = Fun::initializer(name.lexeme(), params, body, self.env.clone());
+                    let fun = Fun::initializer(name.lexeme(), params, body, super_env.clone());
                     class.define(name.lexeme(), fun);
                 },
                 Stmt::Fun(name, params, body) => {
-                    let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
+                    let fun = Fun::closure(name.lexeme(), params, body, super_env.clone());
                     class.define(name.lexeme(), fun);
                 },
                 _ => return Err(errors::system(
