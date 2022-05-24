@@ -458,24 +458,32 @@ impl Parser {
     rd_term!(call(context) :=> Expr : {
         let mut expr = Self::primary(context)?;
 
-        while matches!(context.tokens.peek(), Some(Token::LeftParen(_))) {
-            context.tokens.next();
-            let args = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
-                Vec::new()
-            } else {
-                Self::arguments(context)?
-            };
-
-            let call = rd_consume!(context, call@RightParen => call, "Expected a closing parenthesis `)` after the function call's arguments", "Make sure you have a closing parenthesis `)` after the function call's arguments.")?;
-
-            if args.len() >= 255 {
-                return Err(errors::user(
-                    &format!("Found {} arguments in function call at {}, which is more than the 255 argument limit.", args.len(), call),
-                    "Make sure that you don't have more than 255 arguments in a function call and try refactoring your code to accept an array or object of arguments."
-                ))
+        while let Some(token) = rd_matches!(context, LeftParen | Dot) {
+            match token {
+                Token::LeftParen(_) => {
+                    let args = if matches!(context.tokens.peek(), Some(Token::RightParen(..))) {
+                        Vec::new()
+                    } else {
+                        Self::arguments(context)?
+                    };
+        
+                    let call = rd_consume!(context, call@RightParen => call, "Expected a closing parenthesis `)` after the function call's arguments", "Make sure you have a closing parenthesis `)` after the function call's arguments.")?;
+        
+                    if args.len() >= 255 {
+                        return Err(errors::user(
+                            &format!("Found {} arguments in function call at {}, which is more than the 255 argument limit.", args.len(), call),
+                            "Make sure that you don't have more than 255 arguments in a function call and try refactoring your code to accept an array or object of arguments."
+                        ))
+                    }
+        
+                    expr = Expr::Call(Box::new(expr), args, call);
+                },
+                Token::Dot(_) => {
+                    let property = rd_consume!(context, property@Identifier => property, "Expected a property name after the `.`", "Make sure you have a property name after the `.`.")?;
+                    expr = Expr::Get(Box::new(expr), property);
+                },
+                _ => break
             }
-
-            expr = Expr::Call(Box::new(expr), args, call);
         }
 
         Ok(expr)
@@ -630,8 +638,8 @@ mod tests {
 
     #[test]
     fn parse_function_call() {
-        test_parse("clock();", "(call clock)");
-        test_parse("f(1, 2, 3);", "(call f 1 2 3)");
+        test_parse("clock();", "((call clock))");
+        test_parse("f(1, 2, 3);", "((call f 1 2 3))");
     }
 
     #[test]
@@ -648,5 +656,11 @@ mod tests {
         test_parse("class A {}", "(class A)");
         test_parse("class A { f() {} }", "(class A (fun f (block)))");
         test_parse("class A { f() {} g() {} }", "(class A (fun f (block)) (fun g (block)))");
+    }
+
+    #[test]
+    fn parse_class_properties() {
+        test_parse("print a.b.c;", "(print a.b.c)");
+        test_parse("print a.b().c.d;", "(print (call a.b).c.d)");
     }
 }

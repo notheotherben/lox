@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, rc::Rc};
+use std::{cmp::Ordering, rc::Rc, collections::HashMap};
 
 use crate::ast::Literal;
 
@@ -12,7 +12,7 @@ pub enum Value {
     String(String),
     Callable(Fun),
     Class(Rc<Class>),
-    Instance(Rc<Class>)
+    Instance(Rc<Class>, HashMap<String, Value>),
 }
 
 impl Value {
@@ -44,7 +44,7 @@ impl std::fmt::Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Callable(fun) => write!(f, "{}", fun),
             Value::Class(class) => write!(f, "{}", class),
-            Value::Instance(class) => write!(f, "<{}>", class)
+            Value::Instance(class, props) => write!(f, "<{}>", class)
         }
     }
 }

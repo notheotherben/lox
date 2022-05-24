@@ -12,12 +12,17 @@ impl ExprVisitor<String> for AstPrinter {
     }
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], _close: &crate::lexer::Token) -> String {
-        let mut s = format!("call {}", self.visit_expr(callee));
+        let mut s = format!("(call {}", self.visit_expr(callee));
         for arg in args {
             s.push(' ');
             s.push_str(&self.visit_expr(arg));
         }
+        s.push(')');
         s
+    }
+
+    fn visit_get(&mut self, obj: &Expr, name: &crate::lexer::Token) -> String {
+        format!("{}.{}", self.visit_expr(obj), name.lexeme())
     }
 
     fn visit_fun_expr(&mut self, _token: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[Stmt]) -> String {

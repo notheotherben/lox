@@ -5,6 +5,12 @@ use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexe
 use super::{Value, Interpreter, Fun};
 
 impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
+    fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<Value, LoxError> {
+        let value = self.visit_expr(value)?;
+        self.env.assign(ident.lexeme(), value.clone())?;
+        Ok(value)
+    }
+
     fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value, LoxError> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
@@ -119,7 +125,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     ));
                 }
 
-                Ok(Value::Instance(class))
+                Ok(Value::Instance(class, Default::default()))
             },
             other => Err(errors::user(
                 &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
@@ -127,6 +133,46 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             ))
         }
         
+    }
+
+    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+        let fun = Fun::closure("@anonymous", params, body, self.env.clone());
+        Ok(Value::Callable(fun))
+    }
+
+    fn visit_get(&mut self, obj: &Expr, property: &Token) -> Result<Value, LoxError> {
+        let obj = self.visit_expr(obj)?;
+        match obj {
+            Value::Instance(instance, props) => {
+                let value = props.get(property.lexeme()).ok_or_else(|| errors::user(
+                    &format!("{} does not have a property `{}` at {}.", instance, property.lexeme(), property.location()),
+                    "Make sure that you are attempting to access a property which exists on this instance."
+                ))?;
+                Ok(value.clone())
+            },
+            _ => Err(errors::user(
+                &format!("Attempted to access a property on a value which is not an instance {}.", property.location()),
+                "Make sure that you are attempting to access a property on an instance or class object."
+            ))
+        }
+    }
+
+    fn visit_grouping(&mut self, expr: &Expr) -> Result<Value, LoxError> {
+        self.visit_expr(expr)
+    }
+
+    fn visit_literal(&mut self, value: &Literal) -> Result<Value, LoxError> {
+        Ok(value.into())
+    }
+
+    fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value, LoxError> {
+        let left = self.visit_expr(left)?;
+
+        match op {
+            Token::And(_) if left.is_truthy() => self.visit_expr(right),
+            Token::Or(_) if !left.is_truthy() => self.visit_expr(right),
+            _ => Ok(left)
+        }
     }
 
     fn visit_unary(&mut self, op: &Token, expr: &Expr) -> Result<Value, LoxError> {
@@ -149,14 +195,6 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_grouping(&mut self, expr: &Expr) -> Result<Value, LoxError> {
-        self.visit_expr(expr)
-    }
-
-    fn visit_literal(&mut self, value: &Literal) -> Result<Value, LoxError> {
-        Ok(value.into())
-    }
-
     fn visit_var_ref(&mut self, name: &Token) -> Result<Value, LoxError> {
         match self.env.get(name.lexeme()) {
             Some(value) => Ok(value),
@@ -165,27 +203,6 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                 "Define the variable before you attempt to reference it."
             ))
         }
-    }
-
-    fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<Value, LoxError> {
-        let value = self.visit_expr(value)?;
-        self.env.assign(ident.lexeme(), value.clone())?;
-        Ok(value)
-    }
-
-    fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value, LoxError> {
-        let left = self.visit_expr(left)?;
-
-        match op {
-            Token::And(_) if left.is_truthy() => self.visit_expr(right),
-            Token::Or(_) if !left.is_truthy() => self.visit_expr(right),
-            _ => Ok(left)
-        }
-    }
-
-    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
-        let fun = Fun::closure("@anonymous", params, body, self.env.clone());
-        Ok(Value::Callable(fun))
     }
 }
 

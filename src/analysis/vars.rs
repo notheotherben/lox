@@ -69,6 +69,12 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
+    fn visit_get(&mut self, object: &crate::ast::Expr, _property: &crate::lexer::Token) -> Vec<LoxError> {
+        vec![
+            self.visit_expr(object),
+        ].into_iter().flatten().collect()
+    }
+
     fn visit_fun_expr(&mut self, _token: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[crate::ast::Stmt]) -> Vec<LoxError> {
         self.scopes.push(HashMap::new());
 
