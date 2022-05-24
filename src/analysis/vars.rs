@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
-use crate::{ast::{ExprVisitor, StmtVisitor}, LoxError, errors};
+use crate::{ast::{ExprVisitor, StmtVisitor}, LoxError, errors, lexer::Token};
 
 use super::Analyzer;
 
 #[derive(Debug)]
 pub (super) struct VariableAnalyzer {
     pub (super) scopes: Vec<HashMap<String, bool>>,
+    pub (super) current_class: Option<Token>,
+    pub (super) current_function: Option<Token>,
 }
 
 impl VariableAnalyzer {
@@ -31,6 +33,8 @@ impl Default for VariableAnalyzer {
 
         Self {
             scopes: vec![globals],
+            current_class: None,
+            current_function: None,
         }
     }
 }
@@ -170,6 +174,8 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
     fn visit_class(&mut self, name: &crate::lexer::Token, methods: &[crate::ast::Stmt]) -> Vec<LoxError> {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
+        let parent_class = self.current_class.clone();
+        self.current_class = Some(name.clone());
 
         self.scopes.push(HashMap::new());
         self.declare("this");
@@ -177,6 +183,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
 
         let errs = methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect();
         self.scopes.pop();
+        self.current_class = parent_class;
 
         errs
     }
@@ -188,6 +195,9 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
     fn visit_fun_def(&mut self, name: &crate::lexer::Token, params: &[crate::lexer::Token], body: &[crate::ast::Stmt]) -> Vec<LoxError> {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
+        
+        let parent_fun = self.current_function.clone();
+        self.current_function = Some(name.clone());
 
         self.scopes.push(HashMap::new());
 
@@ -199,6 +209,8 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         let errs = self.visit_block(body);
 
         self.scopes.pop();
+        self.current_function = parent_fun;
+
         errs
     }
 
@@ -214,8 +226,20 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         self.visit_expr(expr)
     }
 
-    fn visit_return(&mut self, _token: &crate::lexer::Token, expr: Option<&crate::ast::Expr>) -> Vec<LoxError> {
-        expr.map(|e| self.visit_expr(e)).unwrap_or_default()
+    fn visit_return(&mut self, token: &crate::lexer::Token, expr: Option<&crate::ast::Expr>) -> Vec<LoxError> {
+        match &self.current_function {
+            Some(fun) if fun.lexeme() == "init" && self.current_class.is_some() && expr.is_some() => {
+                vec![errors::user(
+                    &format!("Found an attempt to return a value within a class initializer at {}.", token.location()),
+                    "You cannot return a value within a class initializer.",
+                )]
+            },
+            None => return vec![errors::user(
+                &format!("Return statement used outside of a function at {}.", token.location()),
+                "You can only use the `return` keyword within a function.",
+            )],
+            _ => expr.map(|e| self.visit_expr(e)).unwrap_or_default()
+        }
     }
 
     fn visit_var_def(&mut self, name: &crate::lexer::Token, expr: &crate::ast::Expr) -> Vec<LoxError> {
@@ -287,5 +311,28 @@ mod tests {
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
         assert_eq!(errs[0].description(), "Found a usage of 'this' outside a class method at line 3, column 17.");
+    }
+
+    #[test]
+    fn test_return_inside_constructor() {
+        let mut analyzer = super::VariableAnalyzer::default();
+
+        let (tree, errs) = Parser::parse(
+            &mut Scanner::new(
+                r#"
+                class A {
+                    init() {
+                        return 1;
+                    }
+                }
+                "#
+            ).filter_map(|t| t.ok())
+        );
+
+        assert!(errs.is_empty(), "no parsing errors");
+
+        let errs = analyzer.analyze(&tree);
+        assert_eq!(errs.len(), 1, "expected 1 error");
+        assert_eq!(errs[0].description(), "Found an attempt to return a value within a class initializer at line 4, column 25.");
     }
 }
