@@ -49,6 +49,8 @@ var counter = makeCounter();
 assert(counter() == 1, "The first counter value should be 1");
 assert(counter() == 2, "The second counter value should be 2");
 
+
+// Anonymous functions
 print "Testing anonymous functions";
 fun thrice(fn) {
   for (var i = 1; i <= 3; i = i + 1) {
@@ -63,3 +65,15 @@ thrice(fun (a) {
 });
 
 assert(i == 3, "The function should have been called three times");
+
+// Sensible scope closures based on order of variable definition
+var scope = "outer";
+{
+  fun test() {
+    return scope;
+  }
+
+  assert(test() == "outer", "The initial reference should be to the outer scope.");
+  var scope = "inner";
+  assert(test() == "outer", "The reference should remain consistent after we define a new variable.");
+}

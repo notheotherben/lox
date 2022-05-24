@@ -1,4 +1,4 @@
-use std::{fmt::{Display, Debug}, rc::Rc, sync::RwLock};
+use std::{fmt::{Display, Debug}, rc::Rc};
 
 use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}};
 
@@ -15,7 +15,7 @@ impl Fun {
         Fun::Native(Rc::new(NativeFun::new(name, arity, fun)))
     }
 
-    pub fn closure<S: Into<String>>(name: S, params: &[Token], body: &[Stmt], env: Rc<RwLock<Environment>>) -> Self {
+    pub fn closure<S: Into<String>>(name: S, params: &[Token], body: &[Stmt], env: Environment) -> Self {
         Fun::Closure(Closure::new(name.into(), params, body, env))
     }
 
@@ -89,11 +89,11 @@ pub struct Closure {
     pub name: String,
     pub args: Vec<Token>,
     pub body: Vec<Stmt>,
-    pub closure: Rc<RwLock<Environment>>,
+    pub closure: Environment,
 }
 
 impl Closure {
-    pub fn new(name: String, args: &[Token], body: &[Stmt], env: Rc<RwLock<Environment>>) -> Self {
+    pub fn new(name: String, args: &[Token], body: &[Stmt], env: Environment) -> Self {
         Self { name, args: args.into(), body: body.into(), closure: env }
     }
 
@@ -106,14 +106,10 @@ impl Closure {
     }
 
     pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
-        let env = Environment::child(self.closure.clone());
-        {
-            let mut env = env.write().unwrap();
-            
-            self.args.iter().zip(args).for_each(|(arg, value)| {
-                env.define(arg.lexeme(), value);
-            });
-        }
+        let mut env = self.closure.branch();
+        self.args.iter().zip(args).for_each(|(arg, value)| {
+            env.define(arg.lexeme(), value);
+        });
 
         let old_env = interpreter.env.clone();
         interpreter.env = env;

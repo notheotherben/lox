@@ -1,8 +1,6 @@
-use std::rc::Rc;
-
 use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexer::Token, errors};
 
-use super::{env::Environment, Value, Interpreter, Fun};
+use super::{Value, Interpreter, Fun};
 
 impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value, LoxError> {
@@ -148,7 +146,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     }
 
     fn visit_var_ref(&mut self, name: &Token) -> Result<Value, LoxError> {
-        match self.env.read().unwrap().get(name.lexeme()) {
+        match self.env.get(name.lexeme()) {
             Some(value) => Ok(value),
             None => Err(errors::user(
                 &format!("Variable `{}` is not defined.", name.lexeme()),
@@ -159,7 +157,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(value)?;
-        self.env.write().unwrap().assign(ident.lexeme(), value.clone())?;
+        self.env.assign(ident.lexeme(), value.clone())?;
         Ok(value)
     }
 
@@ -174,7 +172,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     }
 
     fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
-        let fun = Fun::closure("@anonymous", params, body, Rc::clone(&self.env));
+        let fun = Fun::closure("@anonymous", params, body, self.env.clone());
         Ok(Value::Callable(fun))
     }
 }
@@ -186,9 +184,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
     }
 
     fn visit_block(&mut self, stmts: &[Stmt]) -> Result<Value, LoxError> {
-        let parent = Rc::clone(&self.env);
-        self.env = Environment::child(Rc::clone(&parent));
-
+        let parent = self.env.clone();
         let mut result = Ok(Value::Nil);
 
         for stmt in stmts {
@@ -217,8 +213,8 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
     }
 
     fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
-        let fun = Fun::closure(name.lexeme(), params, body, Rc::clone(&self.env));
-        self.env.write().unwrap().define(name.lexeme(), Value::Callable(fun));
+        let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
+        self.env.define(name.lexeme(), Value::Callable(fun));
         Ok(Value::Nil)
     }
 
@@ -253,7 +249,8 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
-        self.env.write().unwrap().define(name.lexeme(), value);
+        self.env = self.env.branch();
+        self.env.define(name.lexeme(), value);
         Ok(Value::Nil)
     }
 
@@ -290,13 +287,40 @@ mod tests {
     #[test]
     fn test_recursive_functions() {
         let lexer = Scanner::new(r#"
+            print "Defining fib function";
             fun fib(n) {
                 if (n <= 2) return n;
                 return fib(n - 1) + fib(n - 2);
             }
 
+            print "Calling fib function";
             var result = fib(10);
             assert(result == 89, "Function should return the correct number, got " + result);
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        assert!(errs.is_empty(), "no errors");
+
+        let mut interpreter = Interpreter::default();
+        interpreter.interpret(&tree).expect("no errors");
+    }
+
+    #[test]
+    fn test_logical_closures() {
+        let lexer = Scanner::new(r#"
+            var scope = "outer";
+            {
+                fun test() {
+                    print "Scope: " + scope;
+                    assert(scope == "outer", "Scope should be outer");
+                }
+
+                test();
+
+                var scope = "inner";
+                test();
+            }
+
+            assert(scope == "outer", "The original scope variable should not be mutated.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         assert!(errs.is_empty(), "no errors");

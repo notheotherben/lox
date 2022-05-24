@@ -1,12 +1,10 @@
-use std::{rc::Rc, sync::RwLock};
-
 use crate::{ast::{StmtVisitor, Stmt}, LoxError, errors};
 
 use super::{env::Environment, Value, Fun};
 
 #[derive(Debug, Clone)]
-pub struct Interpreter{
-    pub (crate) env: Rc<RwLock<Environment>>,
+pub struct Interpreter {
+    pub (crate) env: Environment,
     pub (crate) breaking: bool,
     pub (crate) returning: Option<Value>,
 }
@@ -23,7 +21,7 @@ impl Interpreter {
 
 impl Default for Interpreter {
     fn default() -> Self {
-        let mut globals = Environment::default();
+        let mut globals = Environment::new();
         globals.define("clock", Value::Callable(Fun::native("native@clock", 0, |_, _| {
             let offset = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)
                 .map_err(|e| errors::system_with_internal(
@@ -47,7 +45,7 @@ impl Default for Interpreter {
         })));
 
         Self {
-            env: Environment::child(Rc::new(RwLock::new(globals))),
+            env: globals,
             breaking: false,
             returning: None,
         }
