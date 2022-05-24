@@ -1,6 +1,8 @@
-use std::{collections::HashMap, fmt::{Debug, Display}};
+use std::{collections::HashMap, fmt::{Debug, Display}, rc::Rc, sync::Mutex};
 
-use super::Fun;
+use crate::{LoxError, lexer::Token, errors};
+
+use super::{Fun, Value};
 
 #[derive(Clone, PartialEq)]
 pub struct Class {
@@ -23,5 +25,47 @@ impl Display for Class {
 impl Debug for Class {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "<{}>", &self.name)
+    }
+}
+
+#[derive(Clone)]
+pub struct Instance {
+    class: Rc<Class>,
+    props: Rc<Mutex<HashMap<String, Value>>>,
+}
+
+impl Instance {
+    pub fn new(class: Rc<Class>) -> Self {
+        Self { class, props: Rc::new(Mutex::new(Default::default())) }
+    }
+
+    pub fn get(&self, property: &Token) -> Result<Value, LoxError> {
+        self.props.lock().unwrap().get(property.lexeme()).cloned().ok_or_else(|| errors::user(
+            &format!("{} does not have a property `{}` at {}.", self.class, property.lexeme(), property.location()),
+            "Make sure that you are attempting to access a property which exists on this instance."
+        ))
+    }
+
+    pub fn set(&mut self, property: &Token, value: Value) -> Result<(), LoxError> {
+        self.props.lock().unwrap().insert(property.lexeme().to_string(), value);
+        Ok(())
+    }
+}
+
+impl PartialEq for Instance {
+    fn eq(&self, other: &Self) -> bool {
+        self.class == other.class && Rc::ptr_eq(&self.props, &other.props)
+    }
+}
+
+impl Display for Instance {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "<{}>", &self.class)
+    }
+}
+
+impl Debug for Instance {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "<{}>", &self.class)
     }
 }

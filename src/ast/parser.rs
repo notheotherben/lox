@@ -431,6 +431,7 @@ impl Parser {
 
             match expr {
                 Expr::Var(name) => Ok(Expr::Assign(name, Box::new(value))),
+                Expr::Get(target, property) => Ok(Expr::Set(target, property, Box::new(value))),
                 _ => Err(errors::user(
                     &format!("Expected a variable identifier to be assigned to, but got {:?} instead at {}.", expr, equals),
                     "Make sure that you provide the name of a variable to assign to."
@@ -662,5 +663,6 @@ mod tests {
     fn parse_class_properties() {
         test_parse("print a.b.c;", "(print a.b.c)");
         test_parse("print a.b().c.d;", "(print (call a.b).c.d)");
+        test_parse("a.b = true;", "((set a.b true))");
     }
 }

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexer::Token, errors, interpreter::Class};
 
-use super::{Value, Interpreter, Fun};
+use super::{Value, Interpreter, Fun, class::Instance};
 
 impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<Value, LoxError> {
@@ -125,7 +125,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     ));
                 }
 
-                Ok(Value::Instance(class, Default::default()))
+                Ok(Value::Instance(Instance::new(class)))
             },
             other => Err(errors::user(
                 &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
@@ -143,12 +143,8 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_get(&mut self, obj: &Expr, property: &Token) -> Result<Value, LoxError> {
         let obj = self.visit_expr(obj)?;
         match obj {
-            Value::Instance(instance, props) => {
-                let value = props.get(property.lexeme()).ok_or_else(|| errors::user(
-                    &format!("{} does not have a property `{}` at {}.", instance, property.lexeme(), property.location()),
-                    "Make sure that you are attempting to access a property which exists on this instance."
-                ))?;
-                Ok(value.clone())
+            Value::Instance(instance) => {
+                instance.get(property)
             },
             _ => Err(errors::user(
                 &format!("Attempted to access a property on a value which is not an instance {}.", property.location()),
@@ -172,6 +168,21 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Token::And(_) if left.is_truthy() => self.visit_expr(right),
             Token::Or(_) if !left.is_truthy() => self.visit_expr(right),
             _ => Ok(left)
+        }
+    }
+
+    fn visit_set(&mut self, obj: &Expr, property: &Token, value: &Expr) -> Result<Value, LoxError> {
+        let obj = self.visit_expr(obj)?;
+        match obj {
+            Value::Instance(mut instance) => {
+                let value = self.visit_expr(value)?;
+                instance.set(property, value.clone())?;
+                Ok(value)
+            },
+            _ => Err(errors::user(
+                &format!("Attempted to set a property on a value which is not an instance {}.", property.location()),
+                "Make sure that you are attempting to set a property on an instance or class object."
+            ))
         }
     }
 
@@ -384,6 +395,27 @@ mod tests {
 
             var foo = Foo();
             print foo;
+        "#);
+        let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
+        for err in errs {
+            panic!("{:?}", err);
+        }
+
+        let mut interpreter = Interpreter::default();
+        for err in interpreter.interpret(&tree) {
+            panic!("{:?}", err);
+        }
+    }
+
+    #[test]
+    fn test_property_access() {
+        let lexer = Scanner::new(r#"
+            class Foo {}
+            print Foo;
+
+            var foo = Foo();
+            foo.bar = "baz";
+            assert(foo.bar == "baz", "Property should be set and read correctly.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {

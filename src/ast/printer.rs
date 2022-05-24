@@ -54,6 +54,10 @@ impl ExprVisitor<String> for AstPrinter {
         format!("({} {} {})", op.lexeme(), self.visit_expr(left), self.visit_expr(right))
     }
 
+    fn visit_set(&mut self, obj: &Expr, name: &crate::lexer::Token, value: &Expr) -> String {
+        format!("(set {}.{} {})", self.visit_expr(obj), name.lexeme(), self.visit_expr(value))
+    }
+
     fn visit_unary(&mut self, op: &crate::lexer::Token, expr: &Expr) -> String {
         format!("({} {})", op.lexeme(), self.visit_expr(expr))
     }
