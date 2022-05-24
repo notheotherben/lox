@@ -1,18 +1,23 @@
 use std::{fmt::{Display, Debug}, rc::Rc};
 
-use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}};
+use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}, errors};
 
 use super::{Value, Interpreter, env::Environment};
 
 #[derive(Clone)]
 pub enum Fun {
     Native(Rc<NativeFun>),
+    Initializer(Closure),
     Closure(Closure),
 }
 
 impl Fun {
     pub fn native<T: Fn(&mut Interpreter, Vec<Value>) -> Result<Value, LoxError> + 'static, S: Into<String>>(name: S, arity: usize, fun: T) -> Self {
         Fun::Native(Rc::new(NativeFun::new(name, arity, fun)))
+    }
+
+    pub fn initializer<S: Into<String>>(name: S, params: &[Token], body: &[Stmt], env: Environment) -> Self {
+        Fun::Initializer(Closure::new(name.into(), params, body, env))
     }
 
     pub fn closure<S: Into<String>>(name: S, params: &[Token], body: &[Stmt], env: Environment) -> Self {
@@ -22,6 +27,7 @@ impl Fun {
     pub fn name(&self) -> &str {
         match self {
             Fun::Native(fun) => fun.name(),
+            Fun::Initializer(_) => "init",
             Fun::Closure(closure) => closure.name(),
         }
     }
@@ -29,6 +35,7 @@ impl Fun {
     pub fn arity(&self) -> usize {
         match self {
             Fun::Native(fun) => fun.arity(),
+            Fun::Initializer(closure) => closure.arity(),
             Fun::Closure(closure) => closure.arity(),
         }
     }
@@ -36,6 +43,14 @@ impl Fun {
     pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
         match self {
             Fun::Native(fun) => fun.call(interpreter, args),
+            Fun::Initializer(closure) => {
+                let this = closure.closure.get("this").ok_or_else(|| errors::system(
+                    "Failed to resolve `this` within the initializer function.",
+                    "This is a bug in the interpreter, please report it with example code."
+                ))?;
+
+                closure.call(interpreter, args).map(|_| this)
+            },
             Fun::Closure(closure) => closure.call(interpreter, args),
         }
     }
@@ -43,6 +58,7 @@ impl Fun {
     pub fn bind(&self, this: Value) -> Self {
         match self {
             Fun::Native(fun) => Fun::Native(fun.clone()),
+            Fun::Initializer(closure) => Fun::Initializer(closure.bind(this)),
             Fun::Closure(fun) => Fun::Closure(fun.bind(this)),
         }
     }

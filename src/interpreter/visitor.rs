@@ -274,6 +274,10 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
         for method in methods {
             match method {
+                Stmt::Fun(name, params, body) if name.lexeme() == "init" => {
+                    let fun = Fun::initializer(name.lexeme(), params, body, self.env.clone());
+                    class.define(name.lexeme(), fun);
+                },
                 Stmt::Fun(name, params, body) => {
                     let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
                     class.define(name.lexeme(), fun);
@@ -526,6 +530,8 @@ mod tests {
 
             var cake = Cake("German chocolate");
             assert(cake.flavor == "German chocolate", "The constructor should be able to set the class properties.");
+
+            assert(cake.init("Vanilla") == cake, "The constructor should return the instance if it is invoked directly.");
         "#);
         let (tree, errs) = Parser::parse(&mut lexer.filter_map(|x| x.ok()));
         for err in errs {

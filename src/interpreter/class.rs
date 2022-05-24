@@ -64,7 +64,7 @@ impl Instance {
 
 impl PartialEq for Instance {
     fn eq(&self, other: &Self) -> bool {
-        self.class == other.class && Rc::ptr_eq(&self.props, &other.props)
+        Rc::ptr_eq(&self.class, &other.class) && Rc::ptr_eq(&self.props, &other.props)
     }
 }
 
