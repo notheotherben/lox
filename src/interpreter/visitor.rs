@@ -187,7 +187,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     }
 
     fn visit_this(&mut self, token: &Token) -> Result<Value, LoxError> {
-        if let Some(instance) = self.env.get("<this>") {
+        if let Some(instance) = self.env.get("this") {
             Ok(instance)
         } else {
             Err(errors::user(

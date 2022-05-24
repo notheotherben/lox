@@ -111,8 +111,17 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
-    fn visit_this(&mut self, _keyword: &crate::lexer::Token) -> Vec<LoxError> {
-        Vec::new()
+    fn visit_this(&mut self, keyword: &crate::lexer::Token) -> Vec<LoxError> {
+        for scope in self.scopes.iter().rev() {
+            if scope.contains_key("this") {
+                return vec![];
+            }
+        }
+
+        vec![errors::user(
+            &format!("Found a usage of '{}' outside a class method at {}.", keyword.lexeme(), keyword.location()),
+            "You can only access `this` within a class method.",
+        )]
     }
 
     fn visit_unary(&mut self, _op: &crate::lexer::Token, expr: &crate::ast::Expr) -> Vec<LoxError> {
@@ -161,8 +170,15 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
     fn visit_class(&mut self, name: &crate::lexer::Token, methods: &[crate::ast::Stmt]) -> Vec<LoxError> {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
-        //methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect()
-        Vec::new()
+
+        self.scopes.push(HashMap::new());
+        self.declare("this");
+        self.initialize("this");
+
+        let errs = methods.iter().flat_map(|stmt| self.visit_stmt(stmt)).collect();
+        self.scopes.pop();
+
+        errs
     }
 
     fn visit_expr_stmt(&mut self, expr: &crate::ast::Expr) -> Vec<LoxError> {
@@ -251,5 +267,25 @@ mod tests {
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
         assert_eq!(errs[0].description(), "Variable 'a' is already defined in this scope, duplicate declaration found at line 3, column 21.");
+    }
+
+    #[test]
+    fn test_this_outside_class_method() {
+        let mut analyzer = super::VariableAnalyzer::default();
+
+        let (tree, errs) = Parser::parse(
+            &mut Scanner::new(
+                r#"
+                var a = 1;
+                this.a = 2;
+                "#
+            ).filter_map(|t| t.ok())
+        );
+
+        assert!(errs.is_empty(), "no parsing errors");
+
+        let errs = analyzer.analyze(&tree);
+        assert_eq!(errs.len(), 1, "expected 1 error");
+        assert_eq!(errs[0].description(), "Found a usage of 'this' outside a class method at line 3, column 17.");
     }
 }

@@ -135,7 +135,7 @@ impl Closure {
 
     pub fn bind(&self, this: Value) -> Self {
         let mut closure = self.closure.branch();
-        closure.define("<this>", this);
+        closure.define("this", this);
 
         Self::new(self.name.clone(), &self.args, &self.body, closure)
     }
