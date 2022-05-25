@@ -1,7 +1,7 @@
 # Lox
 **A Rust implementation of the Crafting Interpreters language Lox**
 This repository contains a Rust implementation of the Lox language as
-described in [Crafting Compilers](https://www.craftingcompilers.com/).
+described in [Crafting Interpreters](https://craftinginterpreters.com/).
 It attempts to remain relatively faithful to the book's implementation,
 while also taking advantage of Rust's idiomatic approach to solving certain
 problems.
