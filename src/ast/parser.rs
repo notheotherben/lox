@@ -480,7 +480,7 @@ impl Parser {
 
     rd_term!(factor := unary (Star | Slash equality)* => Binary);
 
-    rd_term!(unary := (Bang|Minus term)| call => unary);
+    rd_term!(unary := (Bang|Minus call)| call => unary);
 
     rd_term!(call(context) :=> Expr : {
         let mut expr = Self::primary(context)?;

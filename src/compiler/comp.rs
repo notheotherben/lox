@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_stage1() {
-        let source = "print 10 + -5;";
+        let source = "print -5 + 10;";
         let stmts = parse(source);
         assert_eq!(stmts.len(), 1);
 
