@@ -7,7 +7,7 @@ use super::{Value, Interpreter, Fun, class::Instance};
 impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(value)?;
-        self.env.assign(ident.lexeme(), value.clone())?;
+        self.env.assign(ident, value.clone())?;
         Ok(value)
     }
 
@@ -63,8 +63,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     (Value::String(left), Value::String(right)) => Ok(Value::String(left + &right)),
                     (Value::String(left), right) => Ok(Value::String(format!("{}{}", left, right))),
                     (left, Value::String(right)) => Ok(Value::String(format!("{}{}", left, right))),
-                    (left, right) => Err(errors::user(
-                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
+                    (left, right) => Err(errors::runtime(
+                        op.location(),
+                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide either numbers or strings on both the left and right hand sides of the multiplication operator."
                     ))
                 }
@@ -72,8 +73,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Token::Minus(_) => {
                 match (left, right) {
                     (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left - right)),
-                    (left, right) => Err(errors::user(
-                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
+                    (left, right) => Err(errors::runtime(
+                        op.location(),
+                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide numbers on both the left and right hand sides of the subtraction operator.",
                     ))
                 }
@@ -81,8 +83,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Token::Slash(_) => {
                 match (left, right) {
                     (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left / right)),
-                    (left, right) => Err(errors::user(
-                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
+                    (left, right) => Err(errors::runtime(
+                        op.location(),
+                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide numbers on both the left and right hand sides of the division operator.",
                     ))
                 }
@@ -90,8 +93,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Token::Star(_) => {
                 match (left, right) {
                     (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left * right)),
-                    (left, right) => Err(errors::user(
-                        &format!("Invalid operands to binary operator {}: `{:?}` and `{:?}`", op, left, right),
+                    (left, right) => Err(errors::runtime(
+                        op.location(),
+                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide numbers on both the left and right hand sides of the multiplication operator.",
                     ))
                 }
@@ -107,8 +111,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
                 if let Some(init) = class.find_method("init") {
                     if init.arity() != args.len() {
-                        return Err(errors::user(
-                            &format!("Class init function expects {} arguments, but got {} at {}.", init.arity(), args.len(), close.location()),
+                        return Err(errors::runtime(
+                            close.location(),
+                            &format!("Class init function expects {} arguments, but got {}.", init.arity(), args.len()),
                             "Provide the correct number of arguments to the class's `init` method."
                         ));
                     }
@@ -118,10 +123,11 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                         evaluated_args.push(self.visit_expr(arg)?);
                     }
 
-                    init.bind(instance.clone()).call(self, evaluated_args)?;
+                    init.bind(instance.clone(), close.location()).call(self, evaluated_args)?;
                 } else if !args.is_empty() {
-                    return Err(errors::user(
-                        &format!("Class init function expects no arguments, but got {} at {}.", args.len(), close.location()),
+                    return Err(errors::runtime(
+                        close.location(),
+                        &format!("Class init function expects no arguments, but got {}.", args.len()),
                         "Provide the correct number of arguments to the class's `init` method."
                     ));
                 }
@@ -130,8 +136,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             },
             Value::Function(fun) => {
                 if args.len() != fun.arity() {
-                    return Err(errors::user(
-                        &format!("Expected {} arguments but got {} at {}.", fun.arity(), args.len(), close.location()),
+                    return Err(errors::runtime(
+                        close.location(),
+                        &format!("Expected {} arguments but got {}.", fun.arity(), args.len()),
                         "Provide the correct number of arguments to the function call."
                     ));
                 }
@@ -143,8 +150,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 
                 fun.call(self, evaluated_args)
             },
-            other => Err(errors::user(
-                &format!("Attempted to invoke a value which is not a function or class `{}` at {}.", other, close.location()),
+            other => Err(errors::runtime(
+                close.location(),
+                &format!("Attempted to invoke a value which is not a function or class `{}`.", other),
                 "Make sure that you are attempting to call a function or class object."
             ))
         }
@@ -160,16 +168,18 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         let obj = self.visit_expr(obj)?;
         match obj {
             Value::Class(class) => {
-                class.get(property.lexeme()).ok_or_else(|| errors::user(
-                    &format!("Class `{}` does not have a static property `{}` at {}.", class.name(), property.lexeme(), property.location()),
+                class.get(property.lexeme()).ok_or_else(|| errors::runtime(
+                    property.location(),
+                    &format!("Class `{}` does not have a static property `{}`.", class.name(), property.lexeme()),
                     "Make sure that you are attempting to access a static property that exists on this class object."
                 ))
             },
             Value::Instance(instance) => {
                 instance.get(property)
             },
-            _ => Err(errors::user(
-                &format!("Attempted to access a property on a value which is not an instance {}.", property.location()),
+            _ => Err(errors::runtime(
+                property.location(),
+                "Attempted to access a property on a value which is not a class or instance of a class.",
                 "Make sure that you are attempting to access a property on an instance or class object."
             ))
         }
@@ -201,8 +211,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                 instance.set(property, value.clone())?;
                 Ok(value)
             },
-            _ => Err(errors::user(
-                &format!("Attempted to set a property on a value which is not an instance {}.", property.location()),
+            _ => Err(errors::runtime(
+                property.location(),
+                "Attempted to set a property on a value which is not a class instance.",
                 "Make sure that you are attempting to set a property on an instance or class object."
             ))
         }
@@ -211,14 +222,16 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_super(&mut self, token: &Token, method: &Token) -> Result<Value, LoxError> {
         match (self.env.get("this"), self.env.get("super")) {
             (Some(Value::Instance(instance)), Some(Value::Class(superclass))) => {
-                Ok(Value::Function(superclass.find_method(method.lexeme()).ok_or_else(|| errors::user(
-                    &format!("Attempted to call a method `{}` on a superclass which does not have a method at {}.", method.lexeme(), token.location()),
+                Ok(Value::Function(superclass.find_method(method.lexeme()).ok_or_else(|| errors::runtime(
+                    token.location(),
+                    &format!("Attempted to call a method `{}` on a superclass which does not have a method with that name.", method.lexeme()),
                     "Make sure that you are attempting to call a method on a superclass which exists."
-                ))?.bind(instance)))
+                ))?.bind(instance, token.location())))
             },
             _ => {
-                Err(errors::user(
-                    &format!("Attempted to access `super` at {} but no instance was found.", token.location()),
+                Err(errors::runtime(
+                    token.location(),
+                    "Attempted to access `super` outside of a derived class's method.",
                     "Make sure that you are attempting to access `super` inside of a class method."
                 ))
             }
@@ -229,8 +242,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         if let Some(instance) = self.env.get("this") {
             Ok(instance)
         } else {
-            Err(errors::user(
-                &format!("Attempted to access `this` at {} but no instance was found.", token.location()),
+            Err(errors::runtime(
+                token.location(),
+                "Attempted to access `this` outside a class method.",
                 "Make sure that you are attempting to access `this` inside of a class method."
             ))
         }
@@ -243,8 +257,9 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Token::Minus(_) => {
                 match right {
                     Value::Number(num) => Ok(Value::Number(-num)),
-                    _ => Err(errors::user(
-                        &format!("Invalid operand to unary operator {}: `{:?}`", op, right),
+                    _ => Err(errors::runtime(
+                        op.location(),
+                        &format!("Invalid operand to unary operator: `{:?}`", right),
                         "Provide a number to the unary negation operator, or remove the minus sign."
                     ))
                 }
@@ -259,7 +274,8 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_var_ref(&mut self, name: &Token) -> Result<Value, LoxError> {
         match self.env.get(name.lexeme()) {
             Some(value) => Ok(value),
-            None => Err(errors::user(
+            None => Err(errors::runtime(
+                name.location(),
                 &format!("Variable `{}` is not defined.", name.lexeme()),
                 "Define the variable before you attempt to reference it."
             ))
@@ -298,13 +314,15 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_class(&mut self, name: &Token, superclass: Option<&Expr>, statics: &[Stmt], methods: &[Stmt]) -> Result<Value, LoxError> {
         let superclass = match superclass {
-            Some(Expr::Var(name)) => Some(self.env.get(name.lexeme()).ok_or_else(|| errors::user(
-                &format!("Superclass `{}` is not defined.", name.lexeme()),
-                "Define the superclass before you attempt to define a class."
+            Some(Expr::Var(name)) => Some(self.env.get(name.lexeme()).ok_or_else(|| errors::runtime(
+                name.location(),
+                "Attempted to derive from a super-class which has not been defined.",
+                "Define the superclass before you attempt to define a derived class."
             ))?),
-            Some(superclass) => return Err(errors::user(
-                &format!("Superclass `{:?}` is not a class.", superclass),
-                "Make sure that you are providing a class as the superclass."
+            Some(_) => return Err(errors::runtime(
+                name.location(),
+                "Attempted to derive from a something that is not a valid super-class type.",
+                "Make sure that you are providing a class name as the superclass."
             )),
             None => None,
         };
@@ -312,13 +330,14 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         let superclass = match superclass {
             Some(Value::Class(class)) => Some(class),
             None => None,
-            _ => return Err(errors::user(
-                &format!("Superclass `{:?}` is not a class.", superclass),
+            _ => return Err(errors::runtime(
+                name.location(),
+                "Attempted to derive from a non-class object.",
                 "Make sure that you are providing a class as the superclass."
             ))
         };
         
-        self.env.define(name.lexeme(), Value::Nil);
+        self.env.define(name, Value::Nil);
         let mut class = Class::new(name.lexeme(), superclass);
 
         for method in statics {
@@ -333,7 +352,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
         let super_env = if let Some(superclass) = class.superclass() {
             let mut env = self.env.branch();
-            env.define("super", Value::Class(superclass));
+            env.define(&Token::Identifier(name.location(), "super".to_string()), Value::Class(superclass));
             env
         } else {
             self.env.clone()
@@ -356,7 +375,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
             }
         }
 
-        self.env.assign(name.lexeme(), Value::Class(Rc::new(class)))?;
+        self.env.assign(name, Value::Class(Rc::new(class)))?;
         Ok(Value::Nil)
     }
 
@@ -368,7 +387,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_fun_def(&mut self, _ty: FunType, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
         let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
-        self.env.define(name.lexeme(), Value::Function(fun));
+        self.env.define(name, Value::Function(fun));
         Ok(Value::Nil)
     }
 
@@ -404,7 +423,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
     fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
         self.env = self.env.branch();
-        self.env.define(name.lexeme(), value);
+        self.env.define(name, value);
         Ok(Value::Nil)
     }
 

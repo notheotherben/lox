@@ -65,8 +65,9 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
             }
         }
 
-        errs.push(errors::user(
-            &format!("Variable '{}' is not defined during assignment at {}.", ident.lexeme(), ident.location()),
+        errs.push(errors::language(
+            ident.location(),
+            "Variable is not defined during assignment.",
             "Make sure you have defined the variable before assigning a value to it, or add the `var` keyword here.",
         ));
 
@@ -102,8 +103,9 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
             self.declare(param.lexeme());
             self.initialize(param.lexeme());
             if known_params.contains(param.lexeme()) {
-                errs.push(errors::user(
-                    &format!("Duplicate parameter '{}' at {}.", param.lexeme(), param.location()),
+                errs.push(errors::language(
+                    param.location(),
+                    "Duplicate parameter.",
                     "Make sure you are not using the same parameter name twice.",
                 ));
             } else {
@@ -143,12 +145,14 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
 
     fn visit_super(&mut self, keyword: &Token, _method: &Token) -> Vec<LoxError> {
         match self.current_class {
-            ClassType::None => vec![errors::user(
-                &format!("Cannot use 'super' outside of a class at {}.", keyword.location()),
+            ClassType::None => vec![errors::language(
+                keyword.location(),
+                "Cannot use 'super' outside of a class.",
                 "Make sure you are inside a class, and that you are using 'super' in the correct context.",
             )],
-            ClassType::Class => vec![errors::user(
-                &format!("Cannot use 'super' in a class with no superclass at {}.", keyword.location()),
+            ClassType::Class => vec![errors::language(
+                keyword.location(),
+                "Cannot use 'super' in a class with no superclass.",
                 "Make sure you are inside a class, and that you are using 'super' in the correct context.",
             )],
             ClassType::Subclass => Vec::new(),
@@ -162,8 +166,9 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
             }
         }
 
-        vec![errors::user(
-            &format!("Found a usage of '{}' outside a class method at {}.", keyword.lexeme(), keyword.location()),
+        vec![errors::language(
+            keyword.location(),
+            "Found a usage of `this` outside a class method.",
             "You can only access `this` within a class method.",
         )]
     }
@@ -174,7 +179,8 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
 
     fn visit_var_ref(&mut self, name: &Token) -> Vec<LoxError> {
         if self.scopes.last().and_then(|s| s.get(name.lexeme()).map(|v| !(*v))).unwrap_or_default() {
-            return vec![errors::user(
+            return vec![errors::language(
+                name.location(),
                 "Variable references itself during initialization.",
                 "Make sure you are not masking a variable with the same name and try using a different name for this variable if you are.",
             )];
@@ -186,8 +192,9 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
             }
         }
 
-        vec![errors::user(
-            &format!("Variable or function '{}' is not defined, referenced at {}.", name.lexeme(), name.location()),
+        vec![errors::language(
+            name.location(),
+            "Variable or function is not defined.",
             "Make sure you have defined the variable or function before attempting to reference it here.",
         )]
     }
@@ -268,8 +275,9 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
             self.declare(param.lexeme());
             self.initialize(param.lexeme());
             if known_params.contains(param.lexeme()) {
-                errs.push(errors::user(
-                    &format!("Duplicate parameter '{}' at {}.", param.lexeme(), param.location()),
+                errs.push(errors::language(
+                    param.location(),
+                    "Duplicate parameter.",
                     "Make sure you are not using the same parameter name twice.",
                 ));
             } else {
@@ -302,13 +310,15 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> Vec<LoxError> {
         match self.current_function {
             FunctionType::Initializer if expr.is_some() => {
-                vec![errors::user(
-                    &format!("Found an attempt to return a value within a class initializer at {}.", token.location()),
+                vec![errors::language(
+                    token.location(),
+                    "Found an attempt to return a value within a class initializer.",
                     "You cannot return a value within a class initializer.",
                 )]
             },
-            FunctionType::None => return vec![errors::user(
-                &format!("Return statement used outside of a function at {}.", token.location()),
+            FunctionType::None => return vec![errors::language(
+                token.location(),
+                "Return statement used outside of a function.",
                 "You can only use the `return` keyword within a function.",
             )],
             _ => expr.map(|e| self.visit_expr(e)).unwrap_or_default()
@@ -317,8 +327,9 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
 
     fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Vec<LoxError> {
         let errs = if self.scopes.last().map(|s| s.contains_key(name.lexeme())).unwrap_or_default() {
-            vec![errors::user(
-                &format!("Variable '{}' is already defined in this scope, duplicate declaration found at {}.", name.lexeme(), name.location()),
+            vec![errors::language(
+                name.location(),
+                "Variable is already defined in this scope.",
                 "Remove the `var` keyword to assign a new value to this variable, or rename it if you intended to maintain a separate instance.",
             )]
         } else {
@@ -363,7 +374,7 @@ mod tests {
 
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
-        assert_eq!(errs[0].description(), "Variable 'a' is already defined in this scope, duplicate declaration found at line 3, column 21.");
+        assert_eq!(errs[0].description(), "Variable is already defined in this scope.");
     }
 
     #[test]
@@ -383,7 +394,7 @@ mod tests {
 
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
-        assert_eq!(errs[0].description(), "Found a usage of 'this' outside a class method at line 3, column 17.");
+        assert_eq!(errs[0].description(), "Found a usage of `this` outside a class method.");
     }
 
     #[test]
@@ -406,7 +417,7 @@ mod tests {
 
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
-        assert_eq!(errs[0].description(), "Found an attempt to return a value within a class initializer at line 4, column 25.");
+        assert_eq!(errs[0].description(), "Found an attempt to return a value within a class initializer.");
     }
 
     #[test]
@@ -425,7 +436,7 @@ mod tests {
 
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
-        assert_eq!(errs[0].description(), "Cannot use 'super' outside of a class at line 2, column 17.");
+        assert_eq!(errs[0].description(), "Cannot use 'super' outside of a class.");
     }
 
     #[test]
@@ -448,6 +459,6 @@ mod tests {
 
         let errs = analyzer.analyze(&tree);
         assert_eq!(errs.len(), 1, "expected 1 error");
-        assert_eq!(errs[0].description(), "Cannot use 'super' in a class with no superclass at line 4, column 25.");
+        assert_eq!(errs[0].description(), "Cannot use 'super' in a class with no superclass.");
     }
 }

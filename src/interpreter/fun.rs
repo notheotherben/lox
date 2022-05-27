@@ -1,6 +1,6 @@
 use std::{fmt::{Display, Debug}, rc::Rc};
 
-use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}, errors};
+use crate::{LoxError, lexer::Token, ast::{Stmt, StmtVisitor}, errors, core::Loc};
 
 use super::{Value, Interpreter, env::Environment, class::Instance};
 
@@ -55,11 +55,11 @@ impl Fun {
         }
     }
 
-    pub fn bind(&self, this: Instance) -> Self {
+    pub fn bind(&self, this: Instance, loc: Loc) -> Self {
         match self {
             Fun::Native(fun) => Fun::Native(fun.clone()),
-            Fun::Initializer(closure) => Fun::Initializer(closure.bind(this)),
-            Fun::Closure(fun) => Fun::Closure(fun.bind(this)),
+            Fun::Initializer(closure) => Fun::Initializer(closure.bind(this, loc)),
+            Fun::Closure(fun) => Fun::Closure(fun.bind(this, loc)),
         }
     }
 }
@@ -136,7 +136,7 @@ impl Closure {
     pub fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value, LoxError> {
         let mut env = self.closure.branch();
         self.args.iter().zip(args).for_each(|(arg, value)| {
-            env.define(arg.lexeme(), value);
+            env.define(arg, value);
         });
 
         let old_env = interpreter.env.clone();
@@ -154,9 +154,9 @@ impl Closure {
         Ok(result)
     }
 
-    pub fn bind(&self, this: Instance) -> Self {
+    pub fn bind(&self, this: Instance, location: Loc) -> Self {
         let mut closure = self.closure.branch();
-        closure.define("this", Value::Instance(this.clone()));
+        closure.define(&Token::Identifier(location, "this".to_string()), Value::Instance(this));
 
         Self::new(self.name.clone(), &self.args, &self.body, closure)
     }

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc, sync::Mutex};
 
-use crate::{errors, LoxError};
+use crate::{errors, LoxError, lexer::Token};
 
 use super::Value;
 
@@ -27,12 +27,12 @@ impl Environment {
         Environment(Rc::new(Mutex::new(child)))
     }
 
-    pub fn define<K: Into<String>>(&mut self, key: K, value: Value) {
-        self.0.lock().unwrap().define(key.into(), value);
+    pub fn define(&mut self, key: &Token, value: Value) {
+        self.0.lock().unwrap().define(key, value);
     }
 
-    pub fn assign<K: Into<String>>(&mut self, key: K, value: Value) -> Result<(), LoxError> {
-        self.0.lock().unwrap().assign(key.into(), value)
+    pub fn assign(&mut self, key: &Token, value: Value) -> Result<(), LoxError> {
+        self.0.lock().unwrap().assign(key, value)
     }
 
     pub fn get(&self, key: &str) -> Option<Value> {
@@ -47,18 +47,19 @@ impl PartialEq for Environment {
 }
 
 impl Scope {
-    pub fn define(&mut self, key: String, value: Value) {
-        self.values.insert(key, value);
+    pub fn define(&mut self, key: &Token, value: Value) {
+        self.values.insert(key.lexeme().to_string(), value);
     }
 
-    pub fn assign(&mut self, key: String, value: Value) -> Result<(), LoxError> {
-        if let std::collections::hash_map::Entry::Occupied(mut e) = self.values.entry(key.clone()) {
+    pub fn assign(&mut self, key: &Token, value: Value) -> Result<(), LoxError> {
+        if let std::collections::hash_map::Entry::Occupied(mut e) = self.values.entry(key.lexeme().to_string()) {
             e.insert(value);
             Ok(())
         } else if let Some(ref mut env) = self.parent {
             env.lock().unwrap().assign(key, value)
         } else {
-            Err(errors::user(
+            Err(errors::runtime(
+                key.location(),
                 &format!("Attempted to assign to an undefined variable '{}'", &key),
                 &format!("Try defining the variable instead using `var {} = {}`.", &key, value),
             ))
@@ -74,11 +75,15 @@ impl Scope {
 mod tests {
     use super::*;
 
+    fn id(key: &str) -> Token {
+        Token::Identifier(1.into(), key.to_string())
+    }
+
     #[test]
     fn test_global() {
         let mut env = Environment::new();
-        env.define("a", Value::Number(1.0));
-        env.define("b", Value::Number(2.0));
+        env.define(&id("a"), Value::Number(1.0));
+        env.define(&id("b"), Value::Number(2.0));
 
         assert_eq!(env.get("a"), Some(Value::Number(1.0)));
         assert_eq!(env.get("b"), Some(Value::Number(2.0)));
@@ -88,14 +93,14 @@ mod tests {
     #[test]
     fn test_scoped() {
         let mut global = Environment::new();
-        global.define("a", Value::Number(1.0));
-        global.define("b", Value::Number(2.0));
+        global.define(&id("a"), Value::Number(1.0));
+        global.define(&id("b"), Value::Number(2.0));
         let mut env = global.branch();
 
         assert_eq!(env.get("a"), Some(Value::Number(1.0)));
 
-        env.define("a", Value::Number(3.0));
-        env.define("c", Value::Number(4.0));
+        env.define(&id("a"), Value::Number(3.0));
+        env.define(&id("c"), Value::Number(4.0));
 
         assert_eq!(global.get("a"), Some(Value::Number(1.0)));
 

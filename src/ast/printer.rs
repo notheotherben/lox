@@ -175,15 +175,15 @@ impl StmtVisitor<String> for AstPrinter {
 
 #[cfg(test)]
 mod tests {
-    use crate::{lexer::Token, core::Location};
+    use crate::{lexer::Token, core::Loc};
 
     use super::*;
 
     #[test]
     fn test_ast_printer() {
-        let loc = Location::default();
+        let loc = Loc::new(0);
         let expr = Expr::Binary(
-            Box::new(Expr::Unary(Token::Minus(loc), Box::new(Expr::Literal(Literal::Number(123.))))),
+            Box::new(Expr::Unary(Token::Minus(loc.clone()), Box::new(Expr::Literal(Literal::Number(123.))))),
             Token::Star(loc),
             Box::new(Expr::Grouping(Box::new(Expr::Literal(Literal::Number(45.67))))),
         );

@@ -2,10 +2,9 @@ use lox::{LoxError, errors};
 
 fn run_file(path: &str) -> Result<(), LoxError> {
     let content = std::fs::read(path)?;
-    let content = std::str::from_utf8(&content).map_err(|e| errors::user_with_internal(
+    let content = std::str::from_utf8(&content).map_err(|_e| errors::system(
         "The file you provided is not a valid UTF-8 file.",
         "Make sure that the file is a valid UTF-8 file.",
-        e,
     ))?;
 
     let lexer = lox::lexer::Scanner::new(content);

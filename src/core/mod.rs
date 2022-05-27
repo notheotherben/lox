@@ -1,4 +1,4 @@
 pub mod errors;
 mod loc;
 
-pub use loc::Location;
+pub use loc::Loc;

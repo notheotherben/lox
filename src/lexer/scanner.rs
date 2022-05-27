@@ -1,4 +1,4 @@
-use crate::{LoxError, errors, core::Location};
+use crate::{LoxError, errors, core::Loc};
 
 use super::Token;
 
@@ -27,16 +27,8 @@ impl<'a> Scanner<'a> {
         self.has_err
     }
 
-    fn location(&self, loc: usize) -> Location {
-        let line = self.line;
-        let column = loc - self.last_newline;
-        Location::new(line, column)
-    }
-
-    fn err<F: FnOnce(Location) -> LoxError>(&mut self, location: usize, f: F) -> LoxError {
-        self.has_err = true;
-        let location = self.location(location);
-        f(location)
+    fn location(&self) -> Loc {
+        Loc::Line { line: self.line }
     }
 
     fn match_char(&mut self, next: char) -> bool {
@@ -71,7 +63,8 @@ impl<'a> Scanner<'a> {
 
     fn read_token(&mut self) -> Option<Result<Token, LoxError>> {
         while let Some((loc, char)) = self.chars.next() {
-            let location = self.location(loc);
+            let last_line = self.last_newline;
+            let location = self.location();
 
             match char {
                 ' ' => continue,
@@ -141,11 +134,11 @@ impl<'a> Scanner<'a> {
                 c if c.is_numeric() => return Some(self.read_number(loc)),
                 c if c.is_alphabetic() || c == '_' => return Some(self.read_identifier(loc)),
 
-                c => return Some(Err(self.err(loc, |location| errors::user_with_internal(
+                c => return Some(Err(errors::language(
+                    self.location().with_sample(self.source[last_line..loc].to_string()),
                     &format!("We found an unexpected character '{}' where we were expecting one of: [whitespace, parenthesis, brace, operator, identifier, number, string, comment]", c),
                     "Make sure you have entered valid Lox code and have not accidentally closed a string.",
-                    errors::source_location(self.source[loc - 5..loc+2].to_string(), location.line(), location.col()),
-                ))))
+                )))
             }
         }
 
@@ -153,7 +146,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn read_string(&mut self, start: usize) -> Result<Token, LoxError> {
-        let location = self.location(start);
+        let location = self.location();
         
         while let Some((loc, c)) = self.chars.next() {
             match c {
@@ -168,15 +161,15 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        Err(self.err(start, |location| errors::user_with_internal(
+        Err(errors::language(
+            location.with_sample(self.source[start..start+20].to_string()),
             "Reached the end of the file without finding the closing quote for a string.",
             "Make sure that you have terminated your string with a '\"' character.",
-            errors::source_location(self.source[start..start+10].to_string(), location.line(), location.col()),
-        )))
+        ))
     }
 
     fn read_number(&mut self, start: usize) -> Result<Token, LoxError> {
-        let location = self.location(start);
+        let location = self.location();
 
         let mut end = start+self.advance_while_fn(|_, c| c.is_numeric());
         if let Some((loc, c)) = self.chars.peek() {
@@ -190,7 +183,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn read_identifier(&mut self, start: usize) -> Result<Token, LoxError> {
-        let location = self.location(start);
+        let location = self.location();
 
         let end = start + self.advance_while_fn(|_, c| c.is_alphanumeric() || c == '_');
         let lexeme = &self.source[start..end+1];
@@ -234,10 +227,10 @@ mod tests {
     fn test_basic_operators() {
         let mut lexer = Scanner::new("+ - * /");
 
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Plus(Location::new(1, 0)));
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Minus(Location::new(1, 2)));
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Star(Location::new(1, 4)));
-        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Slash(Location::new(1, 6)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Plus(Loc::new(1)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Minus(Loc::new(1)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Star(Loc::new(1)));
+        assert_eq!(lexer.next().expect("a token").expect("without an error"), Token::Slash(Loc::new(1)));
         assert!(lexer.next().is_none(), "no more tokens");
     }
 

@@ -1,4 +1,4 @@
-use crate::{ast::{StmtVisitor, Stmt}, LoxError, errors, analysis::analyze};
+use crate::{ast::{StmtVisitor, Stmt}, LoxError, errors, analysis::analyze, core::Loc};
 
 use super::{env::Environment, Value, Fun};
 
@@ -42,22 +42,25 @@ impl Interpreter {
 impl Default for Interpreter {
     fn default() -> Self {
         let mut globals = Environment::new();
-        globals.define("clock", Value::Function(Fun::native("native@clock", 0, |_, _| {
+
+        fn id(key: &str) -> crate::lexer::Token {
+            crate::lexer::Token::Identifier(Loc::Native, key.to_string())
+        }
+
+        globals.define(&id("clock"), Value::Function(Fun::native("native@clock", 0, |_, _| {
             let offset = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .map_err(|e| errors::system_with_internal(
+                .map_err(|_| errors::runtime(
+                    Loc::Native,
                     "Failed to get current system time because the system time is currently set to a time earlier than 1970-01-01T00:00:00Z.",
-                    "Make sure that you have set your system clock correctly.",
-                    e))?;
+                    "Make sure that you have set your system clock correctly."))?;
                 
             Ok(Value::Number(offset.as_secs() as f64))
         })));
 
-        globals.define("assert", Value::Function(Fun::native("native@assert", 2, |_, args| {
+        globals.define(&id("assert"), Value::Function(Fun::native("native@assert", 2, |_, args| {
             if !args[0].is_truthy() {
-                return Err(errors::user_with_internal(
-                    "Assertion failed",
-                    "Make sure that the first argument passed to the assert function is truthy.",
-                    human_errors::detailed_message(&args[1].to_string()),
+                return Err(errors::user(
+                    format!("Assertion failed: {}", args[1]),
                 ));
             }
 

@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use crate::{errors, lexer::Token, LoxError};
+use crate::{errors, lexer::Token, LoxError, core::Loc};
 
 use super::{Expr, Literal, Stmt, FunType};
 
@@ -111,12 +111,14 @@ macro_rules! rd_consume {
     ($context:ident, $($id:ident@$token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
         match $context.tokens.next() {
             Some($($id@Token::$token(..))|+) => Ok($ok),
-            Some(close_paren) => Err(errors::user(
-                &format!("{}, but got {} instead.", $msg, close_paren),
+            Some(close_paren) => Err(errors::language(
+                close_paren.location(),
+                $msg,
                 $advice
             )),
-            None => Err(errors::user(
-                &format!("{}, but reached the end of the file instead.", $msg),
+            None => Err(errors::language(
+                Loc::Eof,
+                $msg,
                 $advice
             )),
         }
@@ -125,12 +127,14 @@ macro_rules! rd_consume {
     ($context:ident, $($token:ident)|+ => $ok:expr, $msg:expr, $advice:expr) => {
         match $context.tokens.next() {
             Some($(Token::$token(..))|+) => Ok($ok),
-            Some(close_paren) => Err(errors::user(
-                &format!("{}, but got {} instead.", $msg, close_paren),
+            Some(close_paren) => Err(errors::language(
+                close_paren.location(),
+                $msg,
                 $advice
             )),
-            None => Err(errors::user(
-                &format!("{}, but reached the end of the file instead.", $msg),
+            None => Err(errors::language(
+                Loc::Eof,
+                $msg,
                 $advice
             )),
         }
@@ -241,8 +245,9 @@ impl Parser {
             };
 
             if params.len() >= 255 {
-                return Err(errors::user(
-                    &format!("Found {} parameters in function definition at {}, which is more than the 255 argument limit.", params.len(), ident),
+                return Err(errors::language(
+                    ident.location(),
+                    &format!("Found {} parameters in function definition, which is more than the 255 argument limit.", params.len()),
                     "Make sure that you don't have more than 255 parameters in a function definition and try refactoring your code to accept an array or object of arguments."
                 ))
             }
@@ -296,10 +301,11 @@ impl Parser {
                 Stmt::Return(ret, expr)
             },
             Some(Token::Break(_)) => {
-                context.tokens.next();
+                let token = context.tokens.next().unwrap();
 
                 if context.loop_depth == 0 {
-                    return Err(errors::user(
+                    return Err(errors::language(
+                        token.location(),
                         "Cannot use 'break' outside of a loop.",
                         "Make sure that you are within the bounds of a `while` or `for` loop when using the `break` keyword."
                     ));
@@ -451,8 +457,9 @@ impl Parser {
             match expr {
                 Expr::Var(name) => Ok(Expr::Assign(name, Box::new(value))),
                 Expr::Get(target, property) => Ok(Expr::Set(target, property, Box::new(value))),
-                _ => Err(errors::user(
-                    &format!("Expected a variable identifier to be assigned to, but got {:?} instead at {}.", expr, equals),
+                _ => Err(errors::language(
+                    equals.location(),
+                    &format!("Expected a variable identifier to be assigned to, but got {:?} instead.", expr),
                     "Make sure that you provide the name of a variable to assign to."
                 )),
             }
@@ -490,8 +497,9 @@ impl Parser {
                     let call = rd_consume!(context, call@RightParen => call, "Expected a closing parenthesis `)` after the function call's arguments", "Make sure you have a closing parenthesis `)` after the function call's arguments.")?;
         
                     if args.len() >= 255 {
-                        return Err(errors::user(
-                            &format!("Found {} arguments in function call at {}, which is more than the 255 argument limit.", args.len(), call),
+                        return Err(errors::language(
+                            call.location(),
+                            &format!("Found {} arguments in function call, which is more than the 255 argument limit.", args.len()),
                             "Make sure that you don't have more than 255 arguments in a function call and try refactoring your code to accept an array or object of arguments."
                         ))
                     }
@@ -524,11 +532,11 @@ impl Parser {
                 let property = rd_consume!(context, property@Identifier => property, "Expected a property name after the `.`", "Make sure that you call methods on the superclass using `super.method()`.")?;
                 Ok(Expr::Super(sup, property))
             },
-            Some(Token::Number(_, lexeme)) => {
-                let value = lexeme.parse().map_err(|e| errors::user_with_internal(
-                    &format!("Unable to parse number '{}'.", lexeme),
-                    "Make sure you have provided a valid number within the bounds of a 64-bit floating point number.",
-                    e
+            Some(num@Token::Number(..)) => {
+                let value = num.lexeme().parse().map_err(|e| errors::language(
+                    num.location(),
+                    &format!("Unable to parse number '{}': {}", num.lexeme(), e),
+                    "Make sure you have provided a valid number within the bounds of a 64-bit floating point number."
                 ))?;
                 Ok(Expr::Literal(Literal::Number(value)))
             },
@@ -546,12 +554,14 @@ impl Parser {
             Some(t) => {
                 Self::synchronize(context);
 
-                Err(errors::user(
-                    &format!("Encountered an unexpected {:?} token while waiting for one of ['true', 'false', 'nil', number, string, '('].", t),
+                Err(errors::language(
+                    t.location(),
+                    "Encountered an unexpected token while waiting for one of ['true', 'false', 'nil', number, string, '('].",
                     "Make sure that you are providing a primary value at this location.",
                 ))
             },
-            None => Err(errors::user(
+            None => Err(errors::language(
+                Loc::Eof,
                 "Reached the end of the input while waiting for one of ['true', 'false', 'nil', number, string, '('].",
                 "Make sure that you have provided a valid expression."))
         }

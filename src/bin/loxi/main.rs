@@ -21,10 +21,9 @@ fn main() {
 
 fn run_file(filename: &str, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     let content = std::fs::read(filename)?;
-    let content = std::str::from_utf8(&content).map_err(|e| errors::user_with_internal(
+    let content = std::str::from_utf8(&content).map_err(|_e| errors::system(
         "The file you provided is not a valid UTF-8 file.",
         "Make sure that the file is a valid UTF-8 file.",
-        e,
     ))?;
 
     run(content, interpreter)
