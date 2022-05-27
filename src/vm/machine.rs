@@ -13,7 +13,7 @@ pub struct VM {
 }
 
 macro_rules! op_binary {
-    ($self:ident, $op:tt) => {
+    ($self:ident, $op:tt => $ty:ident) => {
         {
             let right = $self.pop()?;
             let left = $self.pop()?;
@@ -21,7 +21,7 @@ macro_rules! op_binary {
             match (left, right) {
                 (Value::Number(left), Value::Number(right)) => {
                     let result = left $op right;
-                    $self.push(Value::Number(result))
+                    $self.push(Value::$ty(result))
                 }
                 _ => return Err(errors::runtime(
                     $self.chunk.location($self.ip - 1),
@@ -65,16 +65,34 @@ impl VM {
                         ))
                     }
                 },
-                OpCode::Add => op_binary!(self, +),
-                OpCode::Subtract => op_binary!(self, -),
-                OpCode::Multiply => op_binary!(self, *),
-                OpCode::Divide => op_binary!(self, /),
+                OpCode::Nil => self.stack.push(Value::Nil),
+                OpCode::True => self.stack.push(Value::Bool(true)),
+                OpCode::False => self.stack.push(Value::Bool(false)),
+
+                OpCode::Add => op_binary!(self, + => Number),
+                OpCode::Subtract => op_binary!(self, - => Number),
+                OpCode::Multiply => op_binary!(self, * => Number),
+                OpCode::Divide => op_binary!(self, / => Number),
+
                 OpCode::Negate => {
                     match self.pop()? {
                         Value::Number(n) => self.stack.push(Value::Number(-n)),
-                        _ => return Err(errors::runtime(self.chunk.location(self.ip - 1), "Operand must be a number.", "Ensure that you are passing a number to the negation operator.")),
+                        _ => return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Operand must be a number.",
+                            "Make sure that you are passing a number to the negate operator."
+                        ))
                     }
                 }
+                OpCode::Not => {
+                    let value = self.pop()?;
+                    self.push(Value::Bool(!value.is_truthy()));
+                }
+
+                OpCode::Equal => op_binary!(self, == => Bool),
+                OpCode::Greater => op_binary!(self, > => Bool),
+                OpCode::Less => op_binary!(self, < => Bool),
+
                 OpCode::Print => {
                     let value = self.pop()?;
                     writeln!(self.output, "{}", value)?;
@@ -208,5 +226,16 @@ mod tests {
         );
 
         run!(chunk => 15);
+    }
+
+    #[test]
+    fn test_boolean() {
+        let chunk = chunk!(
+            True,
+            Negate,
+            Print
+        );
+
+        run!(chunk => false);
     }
 }

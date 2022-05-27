@@ -13,14 +13,30 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<(), LoxError> {
         self.visit_expr(left)?;
         self.visit_expr(right)?;
-        self.chunk.write(
-            match op {
-                Token::Plus(..) => OpCode::Add,
-                Token::Minus(..) => OpCode::Subtract,
-                Token::Star(..) => OpCode::Multiply,
-                Token::Slash(..) => OpCode::Divide,
-                _ => todo!(),
-            }, op.location());
+
+        match op {
+            Token::Plus(..) => self.chunk.write(OpCode::Add, op.location()),
+            Token::Minus(..) => self.chunk.write(OpCode::Subtract, op.location()),
+            Token::Star(..) => self.chunk.write(OpCode::Multiply, op.location()),
+            Token::Slash(..) => self.chunk.write(OpCode::Divide, op.location()),
+
+            Token::EqualEqual(..) => self.chunk.write(OpCode::Equal, op.location()),
+            Token::BangEqual(..) => {
+                self.chunk.write(OpCode::Equal, op.location());
+                self.chunk.write(OpCode::Not, op.location());
+            },
+            Token::Greater(..) => self.chunk.write(OpCode::Greater, op.location()),
+            Token::GreaterEqual(..) => {
+                self.chunk.write(OpCode::Less, op.location());
+                self.chunk.write(OpCode::Not, op.location());
+            },
+            Token::Less(..) => self.chunk.write(OpCode::Less, op.location()),
+            Token::LessEqual(..) => {
+                self.chunk.write(OpCode::Greater, op.location());
+                self.chunk.write(OpCode::Not, op.location());
+            },
+            _ => todo!("{:?}", op),
+        }
 
         Ok(())
     }
@@ -43,8 +59,8 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
     fn visit_literal(&mut self, loc: &Loc, value: &Literal) -> Result<(), LoxError> {
         match value {
-            Literal::Nil => todo!(),
-            Literal::Bool(_) => todo!(),
+            Literal::Nil => self.chunk.write(OpCode::Nil, loc.clone()),
+            Literal::Bool(value) => self.chunk.write(if *value { OpCode::True } else { OpCode::False }, loc.clone()),
             Literal::Number(value) => {
                 let ptr = self.chunk.add_constant(Value::Number(*value));
 
@@ -77,11 +93,11 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
         match op {
             Token::Minus(..) => self.chunk.write(OpCode::Negate, op.location()),
-            Token::Bang(..) => todo!(),
+            Token::Bang(..) => self.chunk.write(OpCode::Not, op.location()),
             _ => Err(errors::language(
                 op.location(),
                 "Unrecognized unary operator.",
-                "Only unary negation (`-`) and logical negation (`!`) are supported."
+                "Only numerical negation (`-`) and logical negation (`!`) are supported."
             ))?,
         };
 
@@ -165,23 +181,43 @@ mod tests {
     }
 
     macro_rules! run {
-        ($chunk:expr => $val:expr) => {
+        ($src:expr => $val:expr) => {
             {
+                let stmts = parse($src);
+
+                let chunk = compile(&stmts).expect("no errors");
+
                 let output = Box::new(CaptureOutput::default());
-                VM::default().with_output(output.clone()).interpret($chunk).expect("no errors");
+                VM::default().with_output(output.clone()).interpret(chunk).expect("no errors");
                 assert_eq!(output.to_string().trim(), format!("{}", $val).trim());
             }
         };
     }
 
     #[test]
-    fn test_stage1() {
-        let source = "print -5 + 10;";
-        let stmts = parse(source);
-        assert_eq!(stmts.len(), 1);
+    fn unary_and_binary() {
+        run!("print -5 + 10;" => 5);
+    }
 
-        let chunk = compile(&stmts).expect("no errors");
+    #[test]
+    fn precedence() {
+        run!("print (-1 + 2) * 3 - -4;" => 7);
+    }
 
-        run!(chunk => 5);
+    #[test]
+    fn booleans() {
+        run!("print true;" => true);
+        run!("print !false;" => true);
+        run!("print !nil;" => true);
+    }
+
+    #[test]
+    fn comparisons() {
+        run!("print 10 == 10;" => true);
+        run!("print 10 != 10;" => false);
+        run!("print 10 < 10;" => false);
+        run!("print 10 <= 10;" => true);
+        run!("print 10 > 10;" => false);
+        run!("print 10 >= 10;" => true);
     }
 }
