@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::{lexer::Token, Loc};
 
 use super::{Literal, Stmt};
 
@@ -8,13 +8,13 @@ pub enum Expr {
     Binary(Box<Expr>, Token, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>, Token),
     Get(Box<Expr>, Token),
-    Fun(Token, Vec<Token>, Vec<Stmt>),
+    Fun(Loc, Vec<Token>, Vec<Stmt>),
     Grouping(Box<Expr>),
-    Literal(Literal),
+    Literal(Loc, Literal),
     Logical(Box<Expr>, Token, Box<Expr>),
     Set(Box<Expr>, Token, Box<Expr>),
-    Super(Token, Token),
-    This(Token),
+    Super(Loc, Token),
+    This(Loc),
     Unary(Token, Box<Expr>),
     Var(Token),
 }
@@ -34,8 +34,8 @@ pub trait ExprVisitor<T> {
             Expr::Get(obj, name) => {
                 self.visit_get(obj, name)
             },
-            Expr::Fun(token, params, body) => {
-                self.visit_fun_expr(token, params, body)
+            Expr::Fun(loc, params, body) => {
+                self.visit_fun_expr(loc, params, body)
             },
             Expr::Grouping(expr) => {
                 self.visit_grouping(expr)
@@ -43,17 +43,17 @@ pub trait ExprVisitor<T> {
             Expr::Logical(left, op, right) => {
                 self.visit_logical(left, op, right)
             },
-            Expr::Literal(value) => {
-                self.visit_literal(value)
+            Expr::Literal(loc, value) => {
+                self.visit_literal(loc, value)
             },
             Expr::Set(obj, property, value) => {
                 self.visit_set(obj, property, value)
             },
-            Expr::Super(token, method) => {
-                self.visit_super(token, method)
+            Expr::Super(loc, method) => {
+                self.visit_super(loc, method)
             },
-            Expr::This(token) => {
-                self.visit_this(token)
+            Expr::This(loc) => {
+                self.visit_this(loc)
             },
             Expr::Unary(op, expr) => {
                 self.visit_unary(op, expr)
@@ -72,19 +72,19 @@ pub trait ExprVisitor<T> {
 
     fn visit_get(&mut self, obj: &Expr, property: &Token) -> T;
 
-    fn visit_fun_expr(&mut self, token: &Token, params: &[Token], body: &[Stmt]) -> T;
+    fn visit_fun_expr(&mut self, loc: &Loc, params: &[Token], body: &[Stmt]) -> T;
 
     fn visit_grouping(&mut self, expr: &Expr) -> T;
 
-    fn visit_literal(&mut self, value: &Literal) -> T;
+    fn visit_literal(&mut self, loc: &Loc, value: &Literal) -> T;
 
     fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> T;
 
     fn visit_set(&mut self, obj: &Expr, property: &Token, value: &Expr) -> T;
 
-    fn visit_super(&mut self, token: &Token, method: &Token) -> T;
+    fn visit_super(&mut self, loc: &Loc, method: &Token) -> T;
 
-    fn visit_this(&mut self, token: &Token) -> T;
+    fn visit_this(&mut self, loc: &Loc) -> T;
 
     fn visit_unary(&mut self, op: &Token, expr: &Expr) -> T;
 

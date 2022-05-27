@@ -46,8 +46,7 @@ impl VM {
     }
 
     fn run(&mut self) -> Result<(), LoxError> {
-        loop {
-            let instruction = self.chunk.code[self.ip];
+        while let Some(instruction) = self.chunk.code.get(self.ip) {
             self.ip += 1;
 
             if self.debug {
@@ -56,8 +55,15 @@ impl VM {
 
             match instruction {
                 OpCode::Constant(idx) => {
-                    let value = self.chunk.constants[idx];
-                    self.stack.push(value);
+                    if let Some(value) = self.chunk.constants.get(*idx) {
+                        self.stack.push(*value);
+                    } else {
+                        return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ))
+                    }
                 },
                 OpCode::Add => op_binary!(self, +),
                 OpCode::Subtract => op_binary!(self, -),
@@ -69,6 +75,10 @@ impl VM {
                         _ => return Err(errors::runtime(self.chunk.location(self.ip - 1), "Operand must be a number.", "Ensure that you are passing a number to the negation operator.")),
                     }
                 }
+                OpCode::Print => {
+                    let value = self.pop()?;
+                    writeln!(self.output, "{}", value)?;
+                }
                 OpCode::Return => {
                     let value = self.pop()?;
                     writeln!(self.output, "{}", value)?;
@@ -77,6 +87,8 @@ impl VM {
                 },
             }
         }
+
+        Ok(())
     }
 
     fn push(&mut self, value: Value) {

@@ -12,8 +12,9 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn write(&mut self, op: OpCode, loc: Loc) {
+    pub fn write<L: Into<Loc>>(&mut self, op: OpCode, loc: L) {
         self.code.push(op);
+        let loc = loc.into();
         
         if let Some(last) = self.locations.last_mut() {
             if last.0 == loc.line() {
@@ -57,13 +58,8 @@ impl Chunk {
             }
 
             match instruction {
-                OpCode::Constant(idx) => writeln!(f, "OP_CONSTANT {}", self.constants[*idx]),
-                OpCode::Add => writeln!(f, "OP_ADD"),
-                OpCode::Subtract => writeln!(f, "OP_SUBTRACT"),
-                OpCode::Multiply => writeln!(f, "OP_MULTIPLY"),
-                OpCode::Divide => writeln!(f, "OP_DIVIDE"),
-                OpCode::Negate => writeln!(f, "OP_NEGATE"),
-                OpCode::Return => writeln!(f, "OP_RETURN"),
+                OpCode::Constant(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+                op => writeln!(f, "{}", op),
             }
         } else {
             writeln!(f, "INVALID_LOCATION")
@@ -90,7 +86,7 @@ mod tests {
         let mut chunk = Chunk::default();
         
         let constant = chunk.add_constant(Value::Number(1.2));
-        chunk.write(OpCode::Constant(constant), Loc::new(123));
+        chunk.write(OpCode::Constant(constant),Loc::new(123));
 
         chunk.write(OpCode::Return, Loc::new(123));
 

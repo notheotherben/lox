@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::{lexer::Token, Loc};
 
 use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt, FunType};
 
@@ -27,7 +27,7 @@ impl ExprVisitor<String> for AstPrinter {
         format!("{}.{}", self.visit_expr(obj), name.lexeme())
     }
 
-    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> String {
+    fn visit_fun_expr(&mut self, _loc: &Loc, params: &[Token], body: &[Stmt]) -> String {
         let mut s = "(fun @anonymous".to_string();
         for param in params {
             s.push(' ');
@@ -43,7 +43,7 @@ impl ExprVisitor<String> for AstPrinter {
         format!("(group {})", self.visit_expr(expr))
     }
 
-    fn visit_literal(&mut self, value: &Literal) -> String {
+    fn visit_literal(&mut self, _loc: &Loc, value: &Literal) -> String {
         match value {
             Literal::Nil => "nil".to_string(),
             Literal::Bool(b) => b.to_string(),
@@ -60,11 +60,11 @@ impl ExprVisitor<String> for AstPrinter {
         format!("(set {}.{} {})", self.visit_expr(obj), name.lexeme(), self.visit_expr(value))
     }
 
-    fn visit_super(&mut self, _token: &Token, method: &Token) -> String {
+    fn visit_super(&mut self, _loc: &Loc, method: &Token) -> String {
         format!("super.{}", method.lexeme())
     }
 
-    fn visit_this(&mut self, _token: &Token) -> String {
+    fn visit_this(&mut self, _loc: &Loc) -> String {
         "this".to_string()
     }
 
@@ -78,7 +78,7 @@ impl ExprVisitor<String> for AstPrinter {
 }
 
 impl StmtVisitor<String> for AstPrinter {
-    fn visit_break(&mut self) -> String {
+    fn visit_break(&mut self, _loc: &Loc) -> String {
         "break".to_string()
     }
 
@@ -148,7 +148,7 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_print(&mut self, expr: &Expr) -> String {
+    fn visit_print(&mut self, _loc: &Loc, expr: &Expr) -> String {
         format!("(print {})", self.visit_expr(expr))
     }
 
@@ -183,9 +183,9 @@ mod tests {
     fn test_ast_printer() {
         let loc = Loc::new(0);
         let expr = Expr::Binary(
-            Box::new(Expr::Unary(Token::Minus(loc.clone()), Box::new(Expr::Literal(Literal::Number(123.))))),
+            Box::new(Expr::Unary(Token::Minus(loc.clone()), Box::new(Expr::Literal(1.into(), Literal::Number(123.))))),
             Token::Star(loc),
-            Box::new(Expr::Grouping(Box::new(Expr::Literal(Literal::Number(45.67))))),
+            Box::new(Expr::Grouping(Box::new(Expr::Literal(1.into(), Literal::Number(45.67))))),
         );
 
         let mut printer = AstPrinter{};

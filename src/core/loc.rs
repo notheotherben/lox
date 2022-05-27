@@ -22,9 +22,9 @@ impl Loc {
         Loc::Line { line }
     }
 
-    pub fn with_sample<S: Into<String>>(self, sample: S) -> Self {
+    pub fn with_sample<S: Into<String>>(&self, sample: S) -> Self {
         match self {
-            Self::Line { line } | Self::SampleLine { line, .. } => Self::SampleLine { sample: sample.into(), line },
+            Self::Line { line } | Self::SampleLine { line, .. } => Self::SampleLine { sample: sample.into(), line: *line },
             _ => Self::Sample { sample: sample.into() },
         }
     }

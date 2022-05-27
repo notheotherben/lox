@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr, FunType}, LoxError, lexer::Token, errors, interpreter::Class};
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr, FunType}, LoxError, lexer::Token, errors, interpreter::Class, Loc};
 
 use super::{Value, Interpreter, Fun, class::Instance};
 
@@ -159,7 +159,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         
     }
 
-    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+    fn visit_fun_expr(&mut self, _loc: &Loc, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
         let fun = Fun::closure("@anonymous", params, body, self.env.clone());
         Ok(Value::Function(fun))
     }
@@ -189,7 +189,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         self.visit_expr(expr)
     }
 
-    fn visit_literal(&mut self, value: &Literal) -> Result<Value, LoxError> {
+    fn visit_literal(&mut self, _loc: &Loc, value: &Literal) -> Result<Value, LoxError> {
         Ok(value.into())
     }
 
@@ -219,18 +219,19 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_super(&mut self, token: &Token, method: &Token) -> Result<Value, LoxError> {
+    fn visit_super(&mut self, loc: &Loc, method: &Token) -> Result<Value, LoxError> {
         match (self.env.get("this"), self.env.get("super")) {
             (Some(Value::Instance(instance)), Some(Value::Class(superclass))) => {
+                let loc = loc.with_sample(format!("super.{}", method.lexeme()));
                 Ok(Value::Function(superclass.find_method(method.lexeme()).ok_or_else(|| errors::runtime(
-                    token.location(),
+                    loc.clone(),
                     &format!("Attempted to call a method `{}` on a superclass which does not have a method with that name.", method.lexeme()),
                     "Make sure that you are attempting to call a method on a superclass which exists."
-                ))?.bind(instance, token.location())))
+                ))?.bind(instance, loc)))
             },
             _ => {
                 Err(errors::runtime(
-                    token.location(),
+                    loc.with_sample("super"),
                     "Attempted to access `super` outside of a derived class's method.",
                     "Make sure that you are attempting to access `super` inside of a class method."
                 ))
@@ -238,12 +239,12 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_this(&mut self, token: &Token) -> Result<Value, LoxError> {
+    fn visit_this(&mut self, loc: &Loc) -> Result<Value, LoxError> {
         if let Some(instance) = self.env.get("this") {
             Ok(instance)
         } else {
             Err(errors::runtime(
-                token.location(),
+                loc.with_sample("this"),
                 "Attempted to access `this` outside a class method.",
                 "Make sure that you are attempting to access `this` inside of a class method."
             ))
@@ -284,7 +285,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
 }
 
 impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
-    fn visit_break(&mut self) -> Result<Value, LoxError> {
+    fn visit_break(&mut self, _loc: &Loc) -> Result<Value, LoxError> {
         self.breaking = true;
         Ok(Value::Nil)
     }
@@ -403,7 +404,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         }
     }
 
-    fn visit_print(&mut self, expr: &Expr) -> Result<Value, LoxError> {
+    fn visit_print(&mut self, _loc: &Loc, expr: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
         writeln!(self.output, "{}", value)?;
         Ok(Value::Nil)

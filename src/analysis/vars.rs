@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{ast::{ExprVisitor, StmtVisitor, Stmt, Expr, FunType}, LoxError, errors, lexer::Token};
+use crate::{ast::{ExprVisitor, StmtVisitor, Stmt, Expr, FunType}, LoxError, errors, lexer::Token, Loc};
 
 use super::Analyzer;
 
@@ -94,7 +94,7 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
-    fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
+    fn visit_fun_expr(&mut self, _loc: &Loc, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
         self.scopes.push(HashMap::new());
 
         let mut errs = Vec::new();
@@ -125,7 +125,7 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         self.visit_expr(expr)
     }
 
-    fn visit_literal(&mut self, _value: &crate::ast::Literal) -> Vec<LoxError> {
+    fn visit_literal(&mut self, _loc: &Loc, _value: &crate::ast::Literal) -> Vec<LoxError> {
         Vec::new()
     }
 
@@ -143,15 +143,15 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
-    fn visit_super(&mut self, keyword: &Token, _method: &Token) -> Vec<LoxError> {
+    fn visit_super(&mut self, loc: &Loc, _method: &Token) -> Vec<LoxError> {
         match self.current_class {
             ClassType::None => vec![errors::language(
-                keyword.location(),
+                loc.with_sample("super"),
                 "Cannot use 'super' outside of a class.",
                 "Make sure you are inside a class, and that you are using 'super' in the correct context.",
             )],
             ClassType::Class => vec![errors::language(
-                keyword.location(),
+                loc.with_sample("super"),
                 "Cannot use 'super' in a class with no superclass.",
                 "Make sure you are inside a class, and that you are using 'super' in the correct context.",
             )],
@@ -159,7 +159,7 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         }
     }
 
-    fn visit_this(&mut self, keyword: &Token) -> Vec<LoxError> {
+    fn visit_this(&mut self, loc: &Loc) -> Vec<LoxError> {
         for scope in self.scopes.iter().rev() {
             if scope.contains_key("this") {
                 return vec![];
@@ -167,7 +167,7 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
         }
 
         vec![errors::language(
-            keyword.location(),
+            loc.with_sample("this"),
             "Found a usage of `this` outside a class method.",
             "You can only access `this` within a class method.",
         )]
@@ -201,7 +201,7 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
 }
 
 impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
-    fn visit_break(&mut self) -> Vec<LoxError> {
+    fn visit_break(&mut self, _loc: &Loc) -> Vec<LoxError> {
         Vec::new()
     }
 
@@ -303,7 +303,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         ].into_iter().flatten().collect()
     }
 
-    fn visit_print(&mut self, expr: &Expr) -> Vec<LoxError> {
+    fn visit_print(&mut self, _loc: &Loc, expr: &Expr) -> Vec<LoxError> {
         self.visit_expr(expr)
     }
 

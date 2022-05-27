@@ -218,7 +218,7 @@ impl Parser {
                         context.tokens.next();
                         Self::expression(context)?
                     } else {
-                        Expr::Literal(Literal::Nil)
+                        Expr::Literal(ident.location(), Literal::Nil)
                     };
         
                     rd_consume!(
@@ -311,12 +311,12 @@ impl Parser {
                     ));
                 }
 
-                Stmt::Break
+                Stmt::Break(token.location())
             },
             Some(Token::Print(_)) => {
-                context.tokens.next();
+                let token = context.tokens.next().unwrap();
                 let expr = Self::expression(context)?;
-                Stmt::Print(expr)
+                Stmt::Print(token.location(), expr)
             },
             _ => {
                 let expr = Self::expression(context)?;
@@ -366,12 +366,12 @@ impl Parser {
             }
         };
 
-        let cond = if rd_matches!(context, Semicolon).is_some() {
-            None
+        let cond = if let Some(token) = rd_matches!(context, Semicolon) {
+            Expr::Literal(token.location(), Literal::Bool(true))
         } else {
             let cond = Self::expression(context)?;
             rd_consume!(context, Semicolon, "Expected a semicolon after the condition", "Make sure you have a semicolon after the condition.")?;
-            Some(cond)
+            cond
         };
 
         let incr = if rd_matches!(context, RightParen).is_some() {
@@ -388,7 +388,7 @@ impl Parser {
             body = Stmt::Block(vec![body, Stmt::Expression(incr)]);
         }
 
-        body = Stmt::While(cond.unwrap_or(Expr::Literal(Literal::Bool(true))), Box::new(body));
+        body = Stmt::While(cond, Box::new(body));
 
         if let Some(init) = init {
             body = Stmt::Block(vec![init, body]);
@@ -442,7 +442,7 @@ impl Parser {
 
             let body = Self::block(context)?;
 
-            Ok(Expr::Fun(fun, params, body))
+            Ok(Expr::Fun(fun.location(), params, body))
         } else {
             Self::assignment(context)
         }
@@ -521,16 +521,16 @@ impl Parser {
 
     rd_term!(primary(context) :=> Expr : {
         match context.tokens.next() {
-            Some(Token::False(_)) => Ok(Expr::Literal(Literal::Bool(false))),
-            Some(Token::True(_)) => Ok(Expr::Literal(Literal::Bool(true))),
-            Some(Token::Nil(_)) => Ok(Expr::Literal(Literal::Nil)),
-            Some(this@Token::This(_)) => {
-                Ok(Expr::This(this))
+            Some(Token::False(loc)) => Ok(Expr::Literal(loc, Literal::Bool(false))),
+            Some(Token::True(loc)) => Ok(Expr::Literal(loc, Literal::Bool(true))),
+            Some(Token::Nil(loc)) => Ok(Expr::Literal(loc, Literal::Nil)),
+            Some(Token::This(loc)) => {
+                Ok(Expr::This(loc))
             },
-            Some(sup@Token::Super(_)) => {
+            Some(Token::Super(loc)) => {
                 rd_consume!(context, Dot, "Expected a `.` after the `super` keyword", "Make sure that you call methods on the superclass using `super.method()`.")?;
                 let property = rd_consume!(context, property@Identifier => property, "Expected a property name after the `.`", "Make sure that you call methods on the superclass using `super.method()`.")?;
-                Ok(Expr::Super(sup, property))
+                Ok(Expr::Super(loc, property))
             },
             Some(num@Token::Number(..)) => {
                 let value = num.lexeme().parse().map_err(|e| errors::language(
@@ -538,11 +538,11 @@ impl Parser {
                     &format!("Unable to parse number '{}': {}", num.lexeme(), e),
                     "Make sure you have provided a valid number within the bounds of a 64-bit floating point number."
                 ))?;
-                Ok(Expr::Literal(Literal::Number(value)))
+                Ok(Expr::Literal(num.location(), Literal::Number(value)))
             },
-            Some(Token::String(_, lexeme)) => {
+            Some(Token::String(loc, lexeme)) => {
                 let value = lexeme[1..lexeme.len() - 1].to_string();
-                Ok(Expr::Literal(Literal::String(value)))
+                Ok(Expr::Literal(loc, Literal::String(value)))
             },
             Some(Token::LeftParen(_)) => {
                 let expr = Self::expression(context)?;
