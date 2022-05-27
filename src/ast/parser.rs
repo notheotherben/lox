@@ -472,15 +472,15 @@ impl Parser {
 
     rd_term!(and := equality (And equality)* => Logical);
 
-    rd_term!(equality := comparison (BangEqual|EqualEqual equality)* => Binary);
+    rd_term!(equality := comparison (BangEqual|EqualEqual comparison)* => Binary);
 
-    rd_term!(comparison := term (Greater | GreaterEqual | Less | LessEqual equality)* => Binary);
+    rd_term!(comparison := term (Greater | GreaterEqual | Less | LessEqual term)* => Binary);
 
-    rd_term!(term := factor (Minus | Plus equality)* => Binary);
+    rd_term!(term := factor (Minus | Plus factor)* => Binary);
 
-    rd_term!(factor := unary (Star | Slash equality)* => Binary);
+    rd_term!(factor := unary (Star | Slash unary)* => Binary);
 
-    rd_term!(unary := (Bang|Minus call)| call => unary);
+    rd_term!(unary := (Bang|Minus unary)| call => unary);
 
     rd_term!(call(context) :=> Expr : {
         let mut expr = Self::primary(context)?;
