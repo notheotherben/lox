@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,
     Bool(bool),

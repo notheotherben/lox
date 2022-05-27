@@ -13,16 +13,30 @@ pub struct VM {
 }
 
 macro_rules! op_binary {
-    ($self:ident, $op:tt => $ty:ident) => {
+    ($self:ident ($left:ident, $right:ident), Any : $op:tt => $res:ident) => {
+        {
+            let $right = $self.pop()?;
+            let $left = $self.pop()?;
+
+            #[allow(unused_parens)]
+            let result = $op;
+            $self.push(Value::$res(result))
+        }
+    };
+
+    ($self:ident ($left:ident, $right:ident), $($src:ident : $op:tt => $res:ident),+) => {
         {
             let right = $self.pop()?;
             let left = $self.pop()?;
 
+            #[allow(unused_parens)]
             match (left, right) {
-                (Value::Number(left), Value::Number(right)) => {
-                    let result = left $op right;
-                    $self.push(Value::$ty(result))
-                }
+                $(
+                    (Value::$src($left), Value::$src($right)) => {
+                        let result = $op;
+                        $self.push(Value::$res(result))
+                    }
+                )+
                 _ => return Err(errors::runtime(
                     $self.chunk.location($self.ip - 1),
                     "Operands must be numbers.",
@@ -69,10 +83,10 @@ impl VM {
                 OpCode::True => self.stack.push(Value::Bool(true)),
                 OpCode::False => self.stack.push(Value::Bool(false)),
 
-                OpCode::Add => op_binary!(self, + => Number),
-                OpCode::Subtract => op_binary!(self, - => Number),
-                OpCode::Multiply => op_binary!(self, * => Number),
-                OpCode::Divide => op_binary!(self, / => Number),
+                OpCode::Add => op_binary!(self(left, right), Number: (left + right) => Number),
+                OpCode::Subtract => op_binary!(self(left, right), Number: (left - right) => Number),
+                OpCode::Multiply => op_binary!(self(left, right), Number: (left * right) => Number),
+                OpCode::Divide => op_binary!(self(left, right), Number: (left / right) => Number),
 
                 OpCode::Negate => {
                     match self.pop()? {
@@ -89,9 +103,9 @@ impl VM {
                     self.push(Value::Bool(!value.is_truthy()));
                 }
 
-                OpCode::Equal => op_binary!(self, == => Bool),
-                OpCode::Greater => op_binary!(self, > => Bool),
-                OpCode::Less => op_binary!(self, < => Bool),
+                OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
+                OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
+                OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
 
                 OpCode::Print => {
                     let value = self.pop()?;
@@ -232,7 +246,7 @@ mod tests {
     fn test_boolean() {
         let chunk = chunk!(
             True,
-            Negate,
+            Not,
             Print
         );
 

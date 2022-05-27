@@ -200,8 +200,9 @@ mod tests {
     }
 
     #[test]
-    fn precedence() {
+    fn examples() {
         run!("print (-1 + 2) * 3 - -4;" => 7);
+        run!("print !(5 - 4 > 3 * 2 == !nil);" => true);
     }
 
     #[test]
