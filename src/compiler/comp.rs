@@ -11,7 +11,18 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<(), LoxError> {
-        todo!()
+        self.visit_expr(left)?;
+        self.visit_expr(right)?;
+        self.chunk.write(
+            match op {
+                Token::Plus(..) => OpCode::Add,
+                Token::Minus(..) => OpCode::Subtract,
+                Token::Star(..) => OpCode::Multiply,
+                Token::Slash(..) => OpCode::Divide,
+                _ => todo!(),
+            }, op.location());
+
+        Ok(())
     }
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<(), LoxError> {
@@ -27,7 +38,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_grouping(&mut self, expr: &Expr) -> Result<(), LoxError> {
-        todo!()
+        self.visit_expr(expr)
     }
 
     fn visit_literal(&mut self, loc: &Loc, value: &Literal) -> Result<(), LoxError> {
@@ -165,12 +176,12 @@ mod tests {
 
     #[test]
     fn test_stage1() {
-        let source = "print -5;";
+        let source = "print 10 + -5;";
         let stmts = parse(source);
         assert_eq!(stmts.len(), 1);
 
         let chunk = compile(&stmts).expect("no errors");
 
-        run!(chunk => -5);
+        run!(chunk => 5);
     }
 }
