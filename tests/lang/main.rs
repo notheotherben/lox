@@ -1,35 +1,4 @@
-use std::{rc::Rc, sync::RwLock};
-
-use lox::{LoxError, errors};
-
-#[derive(Debug, Clone)]
-struct OutputCapture {
-    into: Rc<RwLock<String>>,
-}
-
-impl OutputCapture {
-    pub fn new() -> Self {
-        Self {
-            into: Rc::new(RwLock::new(String::default())),
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        self.into.read().unwrap().clone()
-    }
-}
-
-impl std::io::Write for OutputCapture {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let s = std::str::from_utf8(buf).unwrap();
-        *self.into.write().unwrap() += s;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
+use lox::{LoxError, errors, CaptureOutput};
 
 fn run_file(path: &str) -> Result<(), LoxError> {
     let content = std::fs::read(path)?;
@@ -76,7 +45,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
     }
 
     if !had_error {
-        let output = Box::new(OutputCapture::new());
+        let output = Box::new(CaptureOutput::default());
         let mut interpreter = lox::interpreter::Interpreter::default().with_output(output.clone());
         for err in interpreter.interpret(&stmts) {
             errors.push(format!("{}", err));
