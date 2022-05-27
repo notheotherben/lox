@@ -1,0 +1,4 @@
+fun foo() {}
+print foo; // expect: fun foo (0 args)
+
+print clock; // expect: fun native@clock (0 args)

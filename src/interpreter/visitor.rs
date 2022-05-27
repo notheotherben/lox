@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr}, LoxError, lexer::Token, errors, interpreter::Class};
+use crate::{ast::{ExprVisitor, Literal, StmtVisitor, Stmt, Expr, FunType}, LoxError, lexer::Token, errors, interpreter::Class};
 
 use super::{Value, Interpreter, Fun, class::Instance};
 
@@ -119,6 +119,11 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     }
 
                     init.bind(instance.clone()).call(self, evaluated_args)?;
+                } else if !args.is_empty() {
+                    return Err(errors::user(
+                        &format!("Class init function expects no arguments, but got {} at {}.", args.len(), close.location()),
+                        "Provide the correct number of arguments to the class's `init` method."
+                    ));
                 }
 
                 Ok(Value::Instance(instance))
@@ -318,7 +323,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
         for method in statics {
             match method {
-                Stmt::Fun(name, params, body) => {
+                Stmt::Fun(_ty, name, params, body) => {
                     let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
                     class.set(name.lexeme(), Value::Function(fun));
                 },
@@ -336,11 +341,11 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
         for method in methods {
             match method {
-                Stmt::Fun(name, params, body) if name.lexeme() == "init" => {
+                Stmt::Fun(FunType::Initializer, name, params, body) => {
                     let fun = Fun::initializer(name.lexeme(), params, body, super_env.clone());
                     class.define(name.lexeme(), fun);
                 },
-                Stmt::Fun(name, params, body) => {
+                Stmt::Fun(_, name, params, body) => {
                     let fun = Fun::closure(name.lexeme(), params, body, super_env.clone());
                     class.define(name.lexeme(), fun);
                 },
@@ -361,7 +366,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         Ok(Value::Nil)
     }
 
-    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
+    fn visit_fun_def(&mut self, _ty: FunType, name: &Token, params: &[Token], body: &[Stmt]) -> Result<Value, LoxError> {
         let fun = Fun::closure(name.lexeme(), params, body, self.env.clone());
         self.env.define(name.lexeme(), Value::Function(fun));
         Ok(Value::Nil)
@@ -381,7 +386,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_print(&mut self, expr: &Expr) -> Result<Value, LoxError> {
         let value = self.visit_expr(expr)?;
-        println!("{}", value);
+        writeln!(self.output, "{}", value)?;
         Ok(Value::Nil)
     }
 
@@ -405,7 +410,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> Result<Value, LoxError> {
         let mut cont = self.visit_expr(cond)?;
-        while cont.is_truthy() && !self.breaking {
+        while cont.is_truthy() && !self.breaking && self.returning.is_none() {
             self.visit_stmt(body)?;
 
             cont = self.visit_expr(cond)?;

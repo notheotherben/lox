@@ -4,7 +4,7 @@ use crate::ast::Literal;
 
 use super::{Fun, Class, class::Instance};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Nil,
     Bool(bool),
@@ -22,6 +22,21 @@ impl Value {
             Value::Bool(b) => *b,
             _ => true
         }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Nil, Value::Nil) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Number(a), Value::Number(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            (Value::Class(a), Value::Class(b)) => Rc::ptr_eq(a, b),
+            (Value::Instance(a), Value::Instance(b)) => a == b,
+            (Value::Function(a), Value::Function(b)) => a == b,
+            _ => false
+        }   
     }
 }
 

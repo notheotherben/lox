@@ -2,7 +2,7 @@ use std::iter::Peekable;
 
 use crate::{errors, lexer::Token, LoxError};
 
-use super::{Expr, Literal, Stmt};
+use super::{Expr, Literal, Stmt, FunType};
 
 pub struct Parser {}
 
@@ -71,21 +71,16 @@ macro_rules! rd_term {
         });
     };
 
-    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => binary) => {
+    ($name:ident := $left:ident ( $($token:ident)|+ $right:ident )* => $ty:ident) => {
         rd_term!($name(context) :=> Expr : {
-            let left = Self::$left(context)?;
+            let mut left = Self::$left(context)?;
     
-            if !matches!(context.tokens.peek(), Some($(Token::$token(..))|+)) {
-                return Ok(left)
+            while let Some(op) = rd_matches!(context, $($token)|+) {
+                let right = Self::$right(context)?;
+                left = Expr::$ty(Box::new(left), op, Box::new(right));
             }
-    
-            let op = context.tokens.next().unwrap();
-            let right = Self::$right(context)?;
-            Ok(Expr::Binary(
-                Box::new(left),
-                op,
-                Box::new(right),
-            ))
+
+            Ok(left)
         });
     };
 
@@ -201,9 +196,8 @@ impl Parser {
                     if rd_matches!(context, Class).is_some() {
                         let fun = Self::function(context)?;
                         static_methods.push(fun);
-                    } else {
-                        let fun = Self::function(context)?;
-                        methods.push(fun);
+                    } else if let Stmt::Fun(_, name, params, body) = Self::function(context)? {
+                        methods.push(Stmt::Fun(if name.lexeme() == "init" { FunType::Initializer } else { FunType::Method }, name, params, body));
                     }
                 }
                 
@@ -246,13 +240,20 @@ impl Parser {
                 Self::parameters(context)?   
             };
 
+            if params.len() >= 255 {
+                return Err(errors::user(
+                    &format!("Found {} parameters in function definition at {}, which is more than the 255 argument limit.", params.len(), ident),
+                    "Make sure that you don't have more than 255 parameters in a function definition and try refactoring your code to accept an array or object of arguments."
+                ))
+            }
+
             rd_consume!(context, RightParen, "Expected ')' after the function parameters", "Make sure that you have a ')' after the function parameters.")?;
 
             rd_consume!(context, LeftBrace, "Expected '{' after the function parameters", "Make sure that you have a '{' after the function parameters.")?;
 
             let body = Self::block(context)?;
 
-            Ok(Stmt::Fun(ident, params, body))
+            Ok(Stmt::Fun(FunType::Closure, ident, params, body))
         },
         "Expected a function name to be provided when declaring a new function",
         "Provide a function name here, followed by the function's parameters and body.")?
@@ -460,17 +461,17 @@ impl Parser {
         }
     });
 
-    rd_term!(or := and (Or and)* => binary);
+    rd_term!(or := and (Or and)* => Logical);
 
-    rd_term!(and := equality (And equality)* => binary);
+    rd_term!(and := equality (And equality)* => Logical);
 
-    rd_term!(equality := comparison (BangEqual|EqualEqual equality)* => binary);
+    rd_term!(equality := comparison (BangEqual|EqualEqual equality)* => Binary);
 
-    rd_term!(comparison := term (Greater | GreaterEqual | Less | LessEqual equality)* => binary);
+    rd_term!(comparison := term (Greater | GreaterEqual | Less | LessEqual equality)* => Binary);
 
-    rd_term!(term := factor (Minus | Plus equality)* => binary);
+    rd_term!(term := factor (Minus | Plus equality)* => Binary);
 
-    rd_term!(factor := unary (Star | Slash equality)* => binary);
+    rd_term!(factor := unary (Star | Slash equality)* => Binary);
 
     rd_term!(unary := (Bang|Minus term)| call => unary);
 

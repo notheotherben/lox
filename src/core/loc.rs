@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 pub struct Location {
     line: usize,
     col: usize,
@@ -22,6 +22,10 @@ impl Location {
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "line {}, column {}", self.line, self.col)
+        if self.col == 0 {
+            write!(f, "line {}", self.line)
+        } else {
+            write!(f, "line {}, column {}", self.line, self.col)
+        }
     }
 }

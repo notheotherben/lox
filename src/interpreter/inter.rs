@@ -2,11 +2,11 @@ use crate::{ast::{StmtVisitor, Stmt}, LoxError, errors, analysis::analyze};
 
 use super::{env::Environment, Value, Fun};
 
-#[derive(Debug, Clone)]
 pub struct Interpreter {
     pub (super) env: Environment,
     pub (super) breaking: bool,
     pub (super) returning: Option<Value>,
+    pub output: Box<dyn std::io::Write>,
 }
 
 impl Interpreter {
@@ -25,6 +25,17 @@ impl Interpreter {
         }
 
         errs
+    }
+
+    pub fn with_output(self, output: Box<dyn std::io::Write>) -> Self {
+        Self {
+            output,
+            ..self
+        }
+    }
+
+    pub fn into_output(self) -> Box<dyn std::io::Write> {
+        self.output
     }
 }
 
@@ -57,6 +68,7 @@ impl Default for Interpreter {
             env: globals,
             breaking: false,
             returning: None,
+            output: Box::new(std::io::stdout()),
         }
     }
 }

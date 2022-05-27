@@ -7,3 +7,7 @@ edition = "2021"
 
 [dependencies]
 human-errors = "0.1"
+
+[dev-dependencies]
+regex = "1"
+walkdir = "2.3"

@@ -1,6 +1,6 @@
 use crate::lexer::Token;
 
-use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt};
+use super::{Expr, ExprVisitor, Literal, StmtVisitor, Stmt, FunType};
 
 pub struct AstPrinter{}
 
@@ -120,7 +120,7 @@ impl StmtVisitor<String> for AstPrinter {
         format!("({})", self.visit_expr(expr))
     }
 
-    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> String {
+    fn visit_fun_def(&mut self, _ty: FunType, name: &Token, params: &[Token], body: &[Stmt]) -> String {
         let mut result = String::new();
         result.push_str("(fun ");
         result.push_str(name.lexeme());

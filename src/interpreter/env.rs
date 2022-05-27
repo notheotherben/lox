@@ -40,6 +40,12 @@ impl Environment {
     }
 }
 
+impl PartialEq for Environment {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 impl Scope {
     pub fn define(&mut self, key: String, value: Value) {
         self.values.insert(key, value);

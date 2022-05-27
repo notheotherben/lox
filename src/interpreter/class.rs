@@ -44,13 +44,13 @@ impl Class {
 
 impl Display for Class {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "<{}>", &self.name)
+        write!(f, "{}", &self.name)
     }
 }
 
 impl Debug for Class {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "<{}>", &self.name)
+        write!(f, "{}", &self.name)
     }
 }
 
@@ -92,12 +92,12 @@ impl PartialEq for Instance {
 
 impl Display for Instance {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "<{}>", &self.class)
+        write!(f, "{} instance", &self.class)
     }
 }
 
 impl Debug for Instance {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "<{}>", &self.class)
+        write!(f, "{} instance", &self.class)
     }
 }

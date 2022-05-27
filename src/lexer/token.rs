@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::core::Location;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     LeftParen(Location),
     RightParen(Location),

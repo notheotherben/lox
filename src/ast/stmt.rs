@@ -2,13 +2,20 @@ use crate::{lexer::Token};
 
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FunType {
+    Closure,
+    Method,
+    Initializer,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Block(Vec<Stmt>),
     Break,
     Class(Token, Option<Expr>, Vec<Stmt>, Vec<Stmt>),
     Expression(Expr),
-    Fun(Token, Vec<Token>, Vec<Stmt>),
+    Fun(FunType, Token, Vec<Token>, Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Print(Expr),
     Return(Token, Option<Expr>),
@@ -23,7 +30,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
             Stmt::Break => self.visit_break(),
             Stmt::Class(name, superclass, statics, methods) => self.visit_class(name, superclass.as_ref(), statics, methods),
             Stmt::Expression(expr) => self.visit_expr_stmt(expr),
-            Stmt::Fun(name, params, body) => self.visit_fun_def(name, params, body),
+            Stmt::Fun(ty, name, params, body) => self.visit_fun_def(*ty, name, params, body),
             Stmt::If(expr, then_branch, else_branch) => self.visit_if(expr, then_branch, else_branch.as_ref().map(|b| b.as_ref())),
             Stmt::Print(expr) => self.visit_print(expr),
             Stmt::Return(name, expr) => self.visit_return(name, expr.as_ref()),
@@ -41,7 +48,7 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
 
     fn visit_expr_stmt(&mut self, expr: &Expr) -> T;
     
-    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> T;
+    fn visit_fun_def(&mut self, ty: FunType, name: &Token, params: &[Token], body: &[Stmt]) -> T;
 
     fn visit_if(&mut self, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> T;
     

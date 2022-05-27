@@ -77,8 +77,13 @@ impl Debug for Fun {
 }
 
 impl PartialEq for Fun {
-    fn eq(&self, _other: &Self) -> bool {
-        false
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Fun::Native(fun1), Fun::Native(fun2)) => Rc::ptr_eq(fun1, fun2),
+            (Fun::Initializer(closure1), Fun::Initializer(closure2)) => closure1 == closure2,
+            (Fun::Closure(closure1), Fun::Closure(closure2)) => closure1 == closure2,
+            _ => false,
+        }
     }
 }
 
@@ -107,7 +112,7 @@ impl NativeFun {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Closure {
     pub name: String,
     pub args: Vec<Token>,
@@ -152,9 +157,6 @@ impl Closure {
     pub fn bind(&self, this: Instance) -> Self {
         let mut closure = self.closure.branch();
         closure.define("this", Value::Instance(this.clone()));
-        if let Some(superclass) = this.class().superclass() {
-            closure.define("super", Value::Class(superclass));
-        }
 
         Self::new(self.name.clone(), &self.args, &self.body, closure)
     }

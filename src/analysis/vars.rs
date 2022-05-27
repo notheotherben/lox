@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::{ast::{ExprVisitor, StmtVisitor, Stmt, Expr}, LoxError, errors, lexer::Token};
+use crate::{ast::{ExprVisitor, StmtVisitor, Stmt, Expr, FunType}, LoxError, errors, lexer::Token};
 
 use super::Analyzer;
 
@@ -96,12 +96,24 @@ impl ExprVisitor<Vec<LoxError>> for VariableAnalyzer {
     fn visit_fun_expr(&mut self, _token: &Token, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
         self.scopes.push(HashMap::new());
 
+        let mut errs = Vec::new();
+        let mut known_params = HashSet::new();
         for param in params {
             self.declare(param.lexeme());
             self.initialize(param.lexeme());
+            if known_params.contains(param.lexeme()) {
+                errs.push(errors::user(
+                    &format!("Duplicate parameter '{}' at {}.", param.lexeme(), param.location()),
+                    "Make sure you are not using the same parameter name twice.",
+                ));
+            } else {
+                known_params.insert(param.lexeme());
+            }
         }
 
-        let errs = self.visit_block(body);
+        for stmt in body {
+            errs.append(&mut self.visit_stmt(stmt));
+        }
 
         self.scopes.pop();
         errs
@@ -240,21 +252,34 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         self.visit_expr(expr)
     }
 
-    fn visit_fun_def(&mut self, name: &Token, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
+    fn visit_fun_def(&mut self, ty: FunType, name: &Token, params: &[Token], body: &[Stmt]) -> Vec<LoxError> {
         self.declare(name.lexeme());
         self.initialize(name.lexeme());
         
         let parent_fun = self.current_function;
-        self.current_function = if name.lexeme() == "init" && self.current_class != ClassType::None { FunctionType::Initializer } else { FunctionType::Function };
+        self.current_function = if ty == FunType::Initializer { FunctionType::Initializer } else { FunctionType::Function };
 
         self.scopes.push(HashMap::new());
 
+        let mut errs = Vec::new();
+        
+        let mut known_params = HashSet::new();
         for param in params {
             self.declare(param.lexeme());
             self.initialize(param.lexeme());
+            if known_params.contains(param.lexeme()) {
+                errs.push(errors::user(
+                    &format!("Duplicate parameter '{}' at {}.", param.lexeme(), param.location()),
+                    "Make sure you are not using the same parameter name twice.",
+                ));
+            } else {
+                known_params.insert(param.lexeme());
+            }
         }
 
-        let errs = self.visit_block(body);
+        for stmt in body {
+            errs.append(&mut self.visit_stmt(stmt));
+        }
 
         self.scopes.pop();
         self.current_function = parent_fun;
