@@ -85,6 +85,7 @@ impl VM {
                         ))
                     }
                 },
+
                 OpCode::DefineGlobal(idx) => {
                     if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
                         let key = key.clone();
@@ -110,6 +111,19 @@ impl VM {
                                 "Make sure that you have defined the variable using the `var` keyword before referencing it."
                             ))
                         }
+                    } else {
+                        return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ))
+                    }
+                },
+                OpCode::SetGlobal(idx) => {
+                    if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
+                        let key = key.clone();
+                        let value = self.peek()?;
+                        self.globals.insert(key, value);
                     } else {
                         return Err(errors::runtime(
                             self.chunk.location(self.ip - 1),
@@ -174,6 +188,17 @@ impl VM {
             Err(errors::runtime(
                 self.chunk.location(self.ip - 1),
                 "Attempted to pop with no values on the stack.",
+                "Don't try to do this? o.O"))
+        }
+    }
+
+    fn peek(&self) -> Result<Value, LoxError> {
+        if let Some(value) = self.stack.last() {
+            Ok(value.clone())
+        } else {
+            Err(errors::runtime(
+                self.chunk.location(self.ip - 1),
+                "Attempted to peek with no values on the stack.",
                 "Don't try to do this? o.O"))
         }
     }

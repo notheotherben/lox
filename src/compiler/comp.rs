@@ -1,13 +1,29 @@
+use std::collections::HashMap;
+
 use crate::{vm::{Chunk, Value, OpCode}, ast::{ExprVisitor, StmtVisitor, Literal, Expr, Stmt}, LoxError, lexer::Token, Loc, errors};
 
 #[derive(Default)]
 pub struct Compiler {
     pub chunk: Chunk,
+
+    identifiers: HashMap<String, usize>,
+}
+
+impl Compiler {
+    fn identifier(&mut self, name: &str) -> usize {
+        let index = self.identifiers.entry(name.to_string()).or_insert_with(|| self.chunk.add_constant(Value::String(name.to_string())));
+        *index
+    }
 }
 
 impl ExprVisitor<Result<(), LoxError>> for Compiler {
     fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<(), LoxError> {
-        todo!()
+        self.visit_expr(value)?;
+
+        let index = self.identifier(ident.lexeme());
+        self.chunk.write(OpCode::SetGlobal(index), ident.location());
+
+        Ok(())
     }
 
     fn visit_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<(), LoxError> {
@@ -109,7 +125,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_var_ref(&mut self, name: &Token) -> Result<(), LoxError> {
-        let ptr = self.chunk.add_constant(Value::String(name.lexeme().to_string()));
+        let ptr = self.identifier(name.lexeme());
         self.chunk.write(OpCode::GetGlobal(ptr), name.location());
         Ok(())
     }
@@ -163,7 +179,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<(), LoxError> {
         self.visit_expr(expr)?;
 
-        let ptr = self.chunk.add_constant(Value::String(name.lexeme().to_string()));
+        let ptr = self.identifier(name.lexeme());
         self.chunk.write(OpCode::DefineGlobal(ptr), name.location());
 
         Ok(())
@@ -241,5 +257,7 @@ mod tests {
         run!(r#"var beverage = "cafe au lait";
         var breakfast = "beignets with " + beverage;
         print breakfast;"# => "beignets with cafe au lait");
+
+        run!("var a = 10; a = 12; print a;" => 12);
     }
 }

@@ -7,8 +7,10 @@ pub enum OpCode {
     True,
     False,
     Constant(usize),
+
     DefineGlobal(usize),
     GetGlobal(usize),
+    SetGlobal(usize),
     
     Add,
     Subtract,
@@ -34,8 +36,10 @@ impl Display for OpCode {
             OpCode::True => write!(f, "OP_TRUE"),
             OpCode::False => write!(f, "OP_FALSE"),
             OpCode::Constant(..) => write!(f, "OP_CONSTANT"),
+
             OpCode::DefineGlobal(..) => write!(f, "OP_DEFINE_GLOBAL"),
             OpCode::GetGlobal(..) => write!(f, "OP_GET_GLOBAL"),
+            OpCode::SetGlobal(..) => write!(f, "OP_SET_GLOBAL"),
 
             OpCode::Add => write!(f, "OP_ADD"),
             OpCode::Subtract => write!(f, "OP_SUBTRACT"),
