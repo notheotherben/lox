@@ -17,7 +17,8 @@ impl Chunk {
         let loc = loc.into();
         
         if let Some(last) = self.locations.last_mut() {
-            if last.0 == loc.line() {
+            // Mark unknown/native/EOF locations as the same as the previous location.
+            if matches!(loc, Loc::Eof | Loc::Unknown | Loc::Native) || last.0 == loc.line() {
                 last.1 += 1;
             } else {
                 self.locations.push((loc.line(), 1));

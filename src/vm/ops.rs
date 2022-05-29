@@ -20,6 +20,7 @@ pub enum OpCode {
     Greater,
     Less,
 
+    Pop,
     Print,
     Return,
 }
@@ -44,6 +45,7 @@ impl Display for OpCode {
             OpCode::Greater => write!(f, "OP_GREATER"),
             OpCode::Less => write!(f, "OP_LESS"),
             
+            OpCode::Pop => write!(f, "OP_POP"),
             OpCode::Print => write!(f, "OP_PRINT"),
             OpCode::Return => write!(f, "OP_RETURN"),
         }

@@ -66,7 +66,11 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
                 self.chunk.write(OpCode::Constant(ptr), loc.clone());
             },
-            Literal::String(_) => todo!(),
+            Literal::String(value) => {
+                let ptr = self.chunk.add_constant(Value::String(value.clone()));
+
+                self.chunk.write(OpCode::Constant(ptr), loc.clone());
+            },
         };
 
         Ok(())
@@ -124,7 +128,9 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_expr_stmt(&mut self, expr: &Expr) -> Result<(), LoxError> {
-        self.visit_expr(expr)
+        self.visit_expr(expr)?;
+        self.chunk.write(OpCode::Pop, Loc::Unknown);
+        Ok(())
     }
 
     fn visit_fun_def(&mut self, ty: crate::ast::FunType, name: &Token, params: &[Token], body: &[Stmt]) -> Result<(), LoxError> {

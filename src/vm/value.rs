@@ -1,12 +1,13 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,
     Bool(bool),
     Number(f64),
+    String(String),
 }
 
 impl Value {
@@ -25,6 +26,7 @@ impl Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Bool(b) => write!(f, "{}", *b),
             Value::Number(n) => write!(f, "{}", *n),
+            Value::String(s) => write!(f, "{}", s),
         }
     }
 }

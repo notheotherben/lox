@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, collections::HashSet, rc::Rc};
 
 use crate::{LoxError, errors};
 
@@ -6,10 +6,12 @@ use super::{chunk::{Chunk}, ops::OpCode, value::Value};
 
 pub struct VM {
     debug: bool,
+    output: Box<dyn std::io::Write>,
+
     chunk: Chunk,
     ip: usize,
     stack: Vec<Value>,
-    output: Box<dyn std::io::Write>,
+    
 }
 
 macro_rules! op_binary {
@@ -70,7 +72,7 @@ impl VM {
             match instruction {
                 OpCode::Constant(idx) => {
                     if let Some(value) = self.chunk.constants.get(*idx) {
-                        self.stack.push(*value);
+                        self.stack.push(value.clone());
                     } else {
                         return Err(errors::runtime(
                             self.chunk.location(self.ip - 1),
@@ -83,7 +85,10 @@ impl VM {
                 OpCode::True => self.stack.push(Value::Bool(true)),
                 OpCode::False => self.stack.push(Value::Bool(false)),
 
-                OpCode::Add => op_binary!(self(left, right), Number: (left + right) => Number),
+                OpCode::Add => op_binary!(
+                    self(left, right),
+                    Number: (left + right) => Number,
+                    String: (format!("{}{}", left, right)) => String),
                 OpCode::Subtract => op_binary!(self(left, right), Number: (left - right) => Number),
                 OpCode::Multiply => op_binary!(self(left, right), Number: (left * right) => Number),
                 OpCode::Divide => op_binary!(self(left, right), Number: (left / right) => Number),
@@ -107,6 +112,7 @@ impl VM {
                 OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
                 OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
 
+                OpCode::Pop => { self.pop()?; },
                 OpCode::Print => {
                     let value = self.pop()?;
                     writeln!(self.output, "{}", value)?;
@@ -153,10 +159,11 @@ impl Default for VM {
     fn default() -> Self {
         Self {
             debug: false,
+            output: Box::new(std::io::stdout()),
+
             chunk: Chunk::default(),
             ip: 0,
             stack: Vec::new(),
-            output: Box::new(std::io::stdout()),
         }
     }
 }
@@ -178,7 +185,7 @@ mod tests {
                     {
                         let op = OpCode::$code$((
                             $(
-                                chunk.add_constant(Value::$ty($val)),
+                                chunk.add_constant(Value::$ty($val.into())),
                             ),+
                         ))?;
 
@@ -204,7 +211,7 @@ mod tests {
     #[test]
     fn test_negate() {
         let chunk = chunk!(
-            Constant[Number = 123.0],
+            Constant[Number = 123],
             Negate,
             Return
         );
@@ -227,14 +234,14 @@ mod tests {
         run!(chunk => -((3.4 + 1.2)/5.6));
 
         let chunk = chunk!(
-            Constant[Number = 5.0],
-            Constant[Number = 7.0],
+            Constant[Number = 5],
+            Constant[Number = 7],
             Add,
-            Constant[Number = 2.0],
+            Constant[Number = 2],
             Subtract,
-            Constant[Number = 2.0],
+            Constant[Number = 2],
             Divide,
-            Constant[Number = 3.0],
+            Constant[Number = 3],
             Multiply,
             Return
         );
@@ -251,5 +258,19 @@ mod tests {
         );
 
         run!(chunk => false);
+    }
+
+    #[test]
+    fn test_strings() {
+        let chunk = chunk!(
+            Constant[String = "st"],
+            Constant[String = "ri"],
+            Add,
+            Constant[String = "ng"],
+            Add,
+            Print
+        );
+
+        run!(chunk => "string");
     }
 }
