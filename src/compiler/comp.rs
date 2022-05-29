@@ -238,5 +238,8 @@ mod tests {
     #[test]
     fn variables() {
         run!("var a = 10; print a;" => 10);
+        run!(r#"var beverage = "cafe au lait";
+        var breakfast = "beignets with " + beverage;
+        print breakfast;"# => "beignets with cafe au lait");
     }
 }
