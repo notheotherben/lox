@@ -1,4 +1,4 @@
-use std::{fmt::Debug, collections::HashSet, rc::Rc};
+use std::{fmt::Debug, collections::{HashSet, HashMap}, rc::Rc};
 
 use crate::{LoxError, errors};
 
@@ -12,6 +12,7 @@ pub struct VM {
     ip: usize,
     stack: Vec<Value>,
     
+    globals: HashMap<String, Value>,
 }
 
 macro_rules! op_binary {
@@ -70,6 +71,9 @@ impl VM {
             }
 
             match instruction {
+                OpCode::Nil => self.stack.push(Value::Nil),
+                OpCode::True => self.stack.push(Value::Bool(true)),
+                OpCode::False => self.stack.push(Value::Bool(false)),
                 OpCode::Constant(idx) => {
                     if let Some(value) = self.chunk.constants.get(*idx) {
                         self.stack.push(value.clone());
@@ -81,9 +85,39 @@ impl VM {
                         ))
                     }
                 },
-                OpCode::Nil => self.stack.push(Value::Nil),
-                OpCode::True => self.stack.push(Value::Bool(true)),
-                OpCode::False => self.stack.push(Value::Bool(false)),
+                OpCode::DefineGlobal(idx) => {
+                    if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
+                        let key = key.clone();
+                        let value = self.pop()?;
+                        self.globals.insert(key, value);
+                    } else {
+                        return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ))
+                    }
+                },
+                OpCode::GetGlobal(idx) => {
+                    if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
+                        let key = key.clone();
+                        if let Some(value) = self.globals.get(&key) {
+                            self.stack.push(value.clone());
+                        } else {
+                            return Err(errors::runtime(
+                                self.chunk.location(self.ip - 1),
+                                &format!("The variable '{}' is not defined.", key),
+                                "Make sure that you have defined the variable using the `var` keyword before referencing it."
+                            ))
+                        }
+                    } else {
+                        return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ))
+                    }
+                },
 
                 OpCode::Add => op_binary!(
                     self(left, right),
@@ -164,6 +198,8 @@ impl Default for VM {
             chunk: Chunk::default(),
             ip: 0,
             stack: Vec::new(),
+
+            globals: HashMap::new(),
         }
     }
 }

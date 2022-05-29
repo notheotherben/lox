@@ -109,7 +109,9 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_var_ref(&mut self, name: &Token) -> Result<(), LoxError> {
-        todo!()
+        let ptr = self.chunk.add_constant(Value::String(name.lexeme().to_string()));
+        self.chunk.write(OpCode::GetGlobal(ptr), name.location());
+        Ok(())
     }
 }
 
@@ -159,7 +161,12 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<(), LoxError> {
-        todo!()
+        self.visit_expr(expr)?;
+
+        let ptr = self.chunk.add_constant(Value::String(name.lexeme().to_string()));
+        self.chunk.write(OpCode::DefineGlobal(ptr), name.location());
+
+        Ok(())
     }
 
     fn visit_while(&mut self, expr: &Expr, body: &Stmt) -> Result<(), LoxError> {
@@ -226,5 +233,10 @@ mod tests {
         run!("print 10 <= 10;" => true);
         run!("print 10 > 10;" => false);
         run!("print 10 >= 10;" => true);
+    }
+
+    #[test]
+    fn variables() {
+        run!("var a = 10; print a;" => 10);
     }
 }

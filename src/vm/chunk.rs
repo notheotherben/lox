@@ -60,6 +60,8 @@ impl Chunk {
 
             match instruction {
                 OpCode::Constant(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+                OpCode::DefineGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+                OpCode::GetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 op => writeln!(f, "{}", op),
             }
         } else {
