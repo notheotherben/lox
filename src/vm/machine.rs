@@ -163,6 +163,9 @@ impl VM {
 
                     self.locals[idx] = value;
                 },
+                OpCode::TruncateLocals(len) => {
+                    self.locals.truncate(*len);
+                }
 
                 OpCode::Add => op_binary!(
                     self(left, right),

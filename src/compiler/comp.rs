@@ -172,6 +172,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
         self.scope_depth -= 1;
         self.locals.truncate(parent_locals_len);
+        self.chunk.write(OpCode::TruncateLocals(parent_locals_len), Loc::Native);
 
         Ok(())
     }

@@ -15,6 +15,7 @@ pub enum OpCode {
     DefineLocal,
     GetLocal(usize),
     SetLocal(usize),
+    TruncateLocals(usize),
     
     Add,
     Subtract,
@@ -48,6 +49,7 @@ impl Display for OpCode {
             OpCode::DefineLocal => write!(f, "OP_DEFINE_LOCAL"),
             OpCode::GetLocal(..) => write!(f, "OP_GET_LOCAL"),
             OpCode::SetLocal(..) => write!(f, "OP_SET_LOCAL"),
+            OpCode::TruncateLocals(..) => write!(f, "OP_TRUNCATE_LOCALS"),
 
             OpCode::Add => write!(f, "OP_ADD"),
             OpCode::Subtract => write!(f, "OP_SUBTRACT"),
