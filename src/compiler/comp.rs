@@ -291,6 +291,8 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> Result<(), LoxError> {
         if let Some(expr) = expr {
             self.visit_expr(expr)?;
+        } else {
+            self.chunk.write(OpCode::Nil, token.location());
         }
 
         self.chunk.write(OpCode::Return, token.location());
@@ -366,7 +368,7 @@ mod tests {
     }
 
     macro_rules! run {
-        (runtime_err: $src:expr => $val:expr) => {
+        (err: $src:expr => $val:expr) => {
             {
                 let stmts = parse($src);
 
@@ -468,11 +470,19 @@ mod tests {
         run!("var foo = fun () { print 1; }; print foo;" => "<fn @anonymous>");
         run!("fun foo() { print 1; } foo();" => 1);
         run!("fun foo() { print 1; } foo(); foo();" => "1\n1");
+        run!("print clock() > 0;" => true);
+        run!(err: "assert(false, \"should fail\");" => "Assertion failed: should fail\n\n  [line 0] in assert()\n  [line 1] in script");
+    }
+
+    #[test]
+    fn returns() {
+        run!("fun foo() { return 1; } print foo();" => 1);
+        run!("fun foo() { return; } print foo();" => "nil");
     }
 
     #[test]
     fn stacktraces() {
-        run!(runtime_err: r#"
+        run!(err: r#"
 fun a() { b(); }
 fun b() { c(); }
 fun c() {

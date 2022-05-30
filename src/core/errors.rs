@@ -7,6 +7,7 @@ pub enum LoxError {
     Runtime(Loc, String, String),
     RuntimeStacktrace(String, String, Vec<String>),
     User(String),
+    UserStacktrace(String, Vec<String>)
 }
 
 impl LoxError {
@@ -17,6 +18,7 @@ impl LoxError {
             LoxError::Runtime(_, msg, ..) => msg,
             LoxError::User(msg) => msg,
             LoxError::RuntimeStacktrace(msg, ..) => msg,
+            LoxError::UserStacktrace(msg, ..) => msg,
         }
     }
 }
@@ -29,6 +31,10 @@ pub fn runtime<M: Into<String>, A: Into<String>>(location: Loc, message: M, advi
     LoxError::Runtime(location, message.into(), advice.into())
 }
 
+pub fn runtime_stacktrace<M: Into<String>, A: Into<String>, S: Into<Vec<String>>>(message: M, advice: A, stacktrace: S) -> LoxError {
+    LoxError::RuntimeStacktrace(message.into(), advice.into(), stacktrace.into())
+}
+
 pub fn language<M: Into<String>, A: Into<String>>(location: Loc, message: M, advice: A) -> LoxError {
     LoxError::Language(location, message.into(), advice.into())
 }
@@ -37,8 +43,8 @@ pub fn user<M: Into<String>>(message: M) -> LoxError {
     LoxError::User(message.into())
 }
 
-pub fn runtime_stacktrace<M: Into<String>, A: Into<String>, S: Into<Vec<String>>>(message: M, advice: A, stacktrace: S) -> LoxError {
-    LoxError::RuntimeStacktrace(message.into(), advice.into(), stacktrace.into())
+pub fn user_stacktrace<M: Into<String>, S: Into<Vec<String>>>(message: M, stacktrace: S) -> LoxError {
+    LoxError::UserStacktrace(message.into(), stacktrace.into())
 }
 
 impl std::error::Error for LoxError {}
@@ -52,6 +58,9 @@ impl std::fmt::Display for LoxError {
             LoxError::User(msg) => write!(f, "{}", msg),
             LoxError::RuntimeStacktrace(msg, advice, stacktrace) => {
                 write!(f, "{}\n{}\n\n  {}", msg, advice, stacktrace.join("\n  "))
+            },
+            LoxError::UserStacktrace(msg, stacktrace) => {
+                write!(f, "{}\n\n  {}", msg, stacktrace.join("\n  "))
             }
         }
     }

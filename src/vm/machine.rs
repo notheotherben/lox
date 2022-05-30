@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, rc::Rc, time::SystemTime};
 
 use crate::{errors, Loc, LoxError};
 
@@ -67,6 +67,26 @@ impl VM {
         }
     }
 
+    pub fn with_native<N: Into<String>, F: Fn(&[Value]) -> Result<Value, LoxError> + 'static>(
+        mut self,
+        name: N,
+        arity: usize,
+        fun: F,
+    ) -> Self {
+        let name = name.into();
+        self.globals.insert(
+            name.clone(),
+            Value::Function(Function::native(name, arity, move |vm| {
+                let frame = vm.frame().ok_or_else(|| errors::runtime(Loc::Native, 
+                    "No active frame on the virtual machine call stack.",
+                    "Report this issue to us on GitHub with example code to reproduce the problem."))?;
+                
+                fun(&vm.stack[frame.stack_offset + 1..])
+            })),
+        );
+        self
+    }
+
     pub fn frame(&self) -> Option<Frame> {
         self.frames.last().cloned()
     }
@@ -81,7 +101,10 @@ impl VM {
                 }
 
                 match self.step(frame, instruction) {
-                    Ok(()) => (),
+                    Ok(true) => (),
+                    Ok(false) => {
+                        return Ok(());
+                    },
                     Err(LoxError::Runtime(_loc, msg, advice)) => {
                         let mut stack = Vec::new();
 
@@ -89,8 +112,17 @@ impl VM {
                             stack.push(format!("{}", &frame));
                         }
 
-                        return Err(errors::runtime_stacktrace(msg, advice, stack))
+                        return Err(errors::runtime_stacktrace(msg, advice, stack));
                     },
+                    Err(LoxError::User(msg)) => {
+                        let mut stack = Vec::new();
+
+                        for frame in self.frames.iter().rev() {
+                            stack.push(format!("{}", &frame));
+                        }
+
+                        return Err(errors::user_stacktrace(msg, stack));
+                    }
                     Err(err) => return Err(err),
                 }
             } else {
@@ -102,14 +134,14 @@ impl VM {
         if !self.stack.is_empty() {
             return Err(errors::system(
                 "Stack is not empty at the end of the script.",
-                "Make sure that you are returning a value from the script."
-            ))
+                "Make sure that you are returning a value from the script.",
+            ));
         }
 
         Ok(())
     }
 
-    fn step(&mut self, frame: Frame, instruction: OpCode) -> Result<(), LoxError> {
+    fn step(&mut self, frame: Frame, instruction: OpCode) -> Result<bool, LoxError> {
         match instruction {
             OpCode::Nil => self.stack.push(Value::Nil),
             OpCode::True => self.stack.push(Value::Bool(true)),
@@ -273,6 +305,25 @@ impl VM {
                         let new_frame = Frame::call(name.clone(), chunk.clone(), self.stack.len() - arity - 1);
                         self.frames.push(new_frame);
                     },
+                    Some(Value::Function(Function::Native { name, arity, fun })) => {
+                        if *arity != call_arity {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
+                                "Make sure that you are passing the correct number of arguments to the function."
+                            ));
+                        }
+
+                        let fun = fun.clone();
+
+                        let stack_top = self.stack.len() - arity - 1;
+                        let new_frame = Frame::call(name.clone(), Rc::new(Chunk::default()), stack_top);
+                        self.frames.push(new_frame);
+                        let result = fun(self)?;
+                        self.frames.pop();
+                        self.stack.truncate(stack_top);
+                        self.push(result);
+                    },
                     Some(target) => Err(errors::runtime(
                         frame.last_location(),
                         format!("Unsupported calling target {:?}", target),
@@ -284,8 +335,14 @@ impl VM {
                 };
             }
             OpCode::Return => {
+                let result = self.pop()?;
                 self.stack.truncate(frame.stack_offset);
-                self.frames.pop();
+                if self.frames.pop().is_none() {
+                    self.pop()?;
+                    return Ok(false);
+                }
+
+                self.push(result);
             }
 
             OpCode::Jump(ip) => {
@@ -305,7 +362,7 @@ impl VM {
             }
         };
 
-        Ok(())
+        Ok(true)
     }
 
     fn push(&mut self, value: Value) {
@@ -385,6 +442,28 @@ impl Default for VM {
             globals: HashMap::new(),
             frames: Vec::new(),
         }
+        .with_native("clock", 0, |_args| {
+            Ok(Value::Number(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_err(|_| errors::runtime(
+                        Loc::Native,
+                        "Failed to get current system time because the system time is currently set to a time earlier than 1970-01-01T00:00:00Z.",
+                        "Make sure that you have set your system clock correctly."))?
+                    .as_secs() as f64,
+            ))
+        })
+        .with_native(
+            "assert",
+            2,
+            |args| {
+                if !args[0].is_truthy() {
+                    return Err(errors::user(
+                        format!("Assertion failed: {}", args[1])));
+                }
+
+                Ok(Value::Nil)
+            })
     }
 }
 

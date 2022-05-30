@@ -1,10 +1,17 @@
 use std::{rc::Rc, fmt::{Display, Debug}};
+
 use crate::LoxError;
 
 use super::{Chunk, VM, Value};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Function {
+    Native {
+        name: Rc<String>,
+        arity: usize,
+        #[allow(clippy::type_complexity)]
+        fun: Rc<Box<dyn Fn(&mut VM) -> Result<Value, LoxError> + 'static>>,
+    },
     Closure {
         name: Rc<String>,
         arity: usize,
@@ -18,6 +25,14 @@ impl Function {
             name: Rc::new(name.into()),
             arity,
             chunk: Rc::new(chunk),
+        }
+    }
+
+    pub fn native<N: Into<String>, F: Fn(&mut VM) -> Result<Value, LoxError> + 'static>(name: N, arity: usize, fun: F) -> Self {
+        Function::Native {
+            name: Rc::new(name.into()),
+            arity,
+            fun: Rc::new(Box::new(fun)),
         }
     }
 }
@@ -44,6 +59,16 @@ impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Function::Closure { name, .. } => write!(f, "<fn {}>", name),
+            Function::Native { name, .. } => write!(f, "<native {}>", name),
+        }
+    }
+}
+
+impl Debug for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Function::Closure { name, .. } => write!(f, "<fn {}>", name),
+            Function::Native { name, .. } => write!(f, "<native {}>", name),
         }
     }
 }
