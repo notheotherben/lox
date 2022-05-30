@@ -63,6 +63,10 @@ impl VM {
         Self { output, ..self }
     }
 
+    pub fn with_debug(self) -> Self {
+        Self { debug: true, ..self }
+    }
+
     fn run(&mut self) -> Result<(), LoxError> {
         while let Some(instruction) = self.chunk.code.get(self.ip) {
             self.ip += 1;
@@ -258,11 +262,26 @@ impl VM {
 
 impl Debug for VM {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Chunk: ")?;
+        self.chunk.disassemble(self.ip, f)?;
+
+        write!(f, "Stack:")?;
         for value in self.stack.iter() {
             write!(f, "[{}] ", value)?;
         }
+        writeln!(f)?;
 
-        self.chunk.disassemble(self.ip, f)
+        write!(f, "Locals:")?;
+        for value in self.locals.iter() {
+            write!(f, "[{}] ", value)?;
+        }
+        writeln!(f)?;
+
+        write!(f, "Globals:")?;
+        for (key, value) in self.globals.iter() {
+            write!(f, "{}=[{}] ", key, value)?;
+        }
+        writeln!(f)
     }
 }
 

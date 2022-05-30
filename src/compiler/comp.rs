@@ -9,6 +9,7 @@ pub struct Compiler {
     identifiers: HashMap<String, usize>,
     locals: Vec<Token>,
     scope_depth: usize,
+    break_targets: Vec<usize>,
 }
 
 impl Compiler {
@@ -183,8 +184,13 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
 
 impl StmtVisitor<Result<(), LoxError>> for Compiler {
-    fn visit_break(&mut self, _loc: &Loc) -> Result<(), LoxError> {
-        todo!()
+    fn visit_break(&mut self, loc: &Loc) -> Result<(), LoxError> {
+        if let Some(target) = self.break_targets.last() {
+            self.chunk.write(OpCode::Jump(*target), loc.clone());
+            Ok(())
+        } else {
+            Err(errors::language(loc.clone(), "Found a `break` statement outside a loop statement.", "You can only use break from within the body of a `while` or `for` loop."))
+        }
     }
 
     fn visit_block(&mut self, stmts: &[Stmt]) -> Result<(), LoxError> {
@@ -272,15 +278,35 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_while(&mut self, expr: &Expr, body: &Stmt) -> Result<(), LoxError> {
-        let start = self.chunk.len();
-        self.visit_expr(expr)?;
+        // The `break` statement needs us to have a pre-registered jump target when
+        // evaluating the body of the loop. We handle this by injecting a known jump
+        // statement before the loop and then overwriting it with the correct jump
+        // target after the loop's body is visited. This results in a trampoline-style
+        // jump (i.e. jump to the break target, which jumps to the end of the loop).
+        self.chunk.write(OpCode::Jump(0), Loc::Native);
+        let start_jmp = self.chunk.len() - 1;
+        self.chunk.write(OpCode::Jump(0), Loc::Native);
+        let break_jump = self.chunk.len() - 1;
+        self.break_targets.push(break_jump);
 
-        self.chunk.write(OpCode::JumpIfFalse(0), Loc::Unknown);
+        let start = self.chunk.len();
+        self.chunk.overwrite(OpCode::Jump(start), start_jmp);
+        self.visit_expr(expr)?;
+        self.chunk.write(OpCode::JumpIfFalse(0), Loc::Native);
         let jmp_end = self.chunk.len() - 1;
+        //self.chunk.write(OpCode::Pop, Loc::Native);
+
         self.visit_stmt(body)?;
-        self.chunk.write(OpCode::Jump(start), Loc::Unknown);
+
+        self.chunk.write(OpCode::Jump(start), Loc::Native);
+
+        // When the loop condition evaluates falsey, we will jump to here.
         self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_end);
-        self.chunk.write(OpCode::Pop, Loc::Unknown);
+        self.chunk.write(OpCode::Pop, Loc::Native);
+
+        // When we run `break` we will jump to this point
+        self.chunk.overwrite(OpCode::Jump(self.chunk.len()), break_jump);
+        self.break_targets.pop();
 
         Ok(())
     }
@@ -384,7 +410,9 @@ mod tests {
     }
 
     #[test]
-    fn test_while() {
+    fn test_loops() {
         run!("var i = 0; while (i < 10) { print i; i = i + 1; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
+        run!("for (var i = 0; i < 10; i = i + 1) { print i; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
+        run!("while (true) { print 1; break; print 2; }" => 1);
     }
 }
