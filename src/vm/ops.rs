@@ -31,6 +31,8 @@ pub enum OpCode {
 
     Pop,
     Print,
+
+    Call(usize),
     Return,
 
     Jump(usize),
@@ -69,6 +71,8 @@ impl Display for OpCode {
             
             OpCode::Pop => write!(f, "OP_POP"),
             OpCode::Print => write!(f, "OP_PRINT"),
+
+            OpCode::Call(..) => write!(f, "OP_CALL"),
             OpCode::Return => write!(f, "OP_RETURN"),
 
             OpCode::Jump(..) => write!(f, "OP_JUMP"),

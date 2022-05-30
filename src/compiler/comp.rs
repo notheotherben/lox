@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{vm::{Chunk, Value, OpCode}, ast::{ExprVisitor, StmtVisitor, Literal, Expr, Stmt}, LoxError, lexer::Token, Loc, errors};
+use crate::{vm::{Chunk, Value, OpCode, Function}, ast::{ExprVisitor, StmtVisitor, Literal, Expr, Stmt}, LoxError, lexer::Token, Loc, errors};
 
 #[derive(Default)]
 pub struct Compiler {
@@ -79,7 +79,17 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<(), LoxError> {
-        todo!()
+        self.visit_expr(callee)?;
+
+        self.chunk.write(OpCode::Nil, close.location());
+
+        for arg in args {
+            self.visit_expr(arg)?;
+        }
+
+        self.chunk.write(OpCode::Call(args.len()), close.location());
+
+        Ok(())
     }
 
     fn visit_get(&mut self, obj: &Expr, property: &Token) -> Result<(), LoxError> {
@@ -87,7 +97,18 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_fun_expr(&mut self, loc: &Loc, params: &[Token], body: &[Stmt]) -> Result<(), LoxError> {
-        todo!()
+        let mut comp = Compiler::default();
+
+        for param in params {
+            comp.define_local(param);
+        }
+
+        comp.visit_block(body)?;
+
+        let ptr = self.chunk.add_constant(Value::Function(Function::closure("@anonymous", params.len(), comp.chunk)));
+        self.chunk.write(OpCode::Constant(ptr), loc.clone());
+
+        Ok(())
     }
 
     fn visit_grouping(&mut self, expr: &Expr) -> Result<(), LoxError> {
@@ -219,7 +240,20 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_fun_def(&mut self, ty: crate::ast::FunType, name: &Token, params: &[Token], body: &[Stmt]) -> Result<(), LoxError> {
-        todo!()
+        let mut comp = Compiler::default();
+
+        for param in params {
+            comp.define_local(param);
+        }
+
+        comp.visit_block(body)?;
+
+        let ident = self.identifier(name.lexeme());
+        let ptr = self.chunk.add_constant(Value::Function(Function::closure(name.lexeme(), params.len(), comp.chunk)));
+        self.chunk.write(OpCode::Constant(ptr), name.location());
+        self.chunk.write(OpCode::DefineGlobal(ident), name.location());
+
+        Ok(())
     }
 
     fn visit_if(&mut self, token: &Token, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<(), LoxError> {
@@ -398,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn test_logical() {
+    fn logical() {
         run!("print 1 and 2;" => 2);
         run!("print 1 and false;" => false);
         run!("print false and 1;" => false);
@@ -410,9 +444,17 @@ mod tests {
     }
 
     #[test]
-    fn test_loops() {
+    fn loops() {
         run!("var i = 0; while (i < 10) { print i; i = i + 1; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
         run!("for (var i = 0; i < 10; i = i + 1) { print i; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
         run!("while (true) { print 1; break; print 2; }" => 1);
+    }
+
+    #[test]
+    fn functions() {
+        run!("fun foo() { print 1; } print foo;" => "<fn foo>");
+        run!("var foo = fun () { print 1; }; print foo;" => "<fn @anonymous>");
+        run!("fun foo() { print 1; } foo();" => 1);
+        run!("fun foo() { print 1; } foo(); foo();" => "1\n1");
     }
 }

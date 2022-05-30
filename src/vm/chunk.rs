@@ -83,7 +83,10 @@ impl Chunk {
                 OpCode::TruncateLocals(len) => writeln!(f, "{} {}", instruction, *len),
 
                 OpCode::Jump(ip) => writeln!(f, "{} {}", instruction, ip + *ip),
+                OpCode::JumpIf(ip) => writeln!(f, "{} {}", instruction, ip),
                 OpCode::JumpIfFalse(ip) => writeln!(f, "{} {}", instruction, ip),
+
+                OpCode::Call(arity) => writeln!(f, "{} {}", instruction, arity),
 
                 op => writeln!(f, "{}", op),
             }

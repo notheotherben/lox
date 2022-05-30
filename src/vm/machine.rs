@@ -1,19 +1,17 @@
-use std::{fmt::Debug, collections::HashMap};
+use std::{collections::HashMap, fmt::Debug};
 
-use crate::{LoxError, errors};
+use crate::{errors, Loc, LoxError};
 
-use super::{chunk::Chunk, ops::OpCode, value::Value};
+use super::{chunk::Chunk, ops::OpCode, value::Value, Frame, Function};
 
 pub struct VM {
     debug: bool,
     output: Box<dyn std::io::Write>,
 
-    chunk: Chunk,
-    ip: usize,
     stack: Vec<Value>,
-    
+
     globals: HashMap<String, Value>,
-    locals: Vec<Value>,
+    frames: Vec<Frame>,
 }
 
 macro_rules! op_binary {
@@ -28,7 +26,7 @@ macro_rules! op_binary {
         }
     };
 
-    ($self:ident ($left:ident, $right:ident), $($src:ident : $op:tt => $res:ident),+) => {
+    ($self:ident ($frame:ident, $left:ident, $right:ident), $($src:ident : $op:tt => $res:ident),+) => {
         {
             let right = $self.pop()?;
             let left = $self.pop()?;
@@ -42,7 +40,7 @@ macro_rules! op_binary {
                     }
                 )+
                 _ => return Err(errors::runtime(
-                    $self.chunk.location($self.ip - 1),
+                    $frame.last_location(),
                     "Operands must be numbers.",
                     "Make sure that you are passing numbers to the $op operator."
                 ))
@@ -53,8 +51,7 @@ macro_rules! op_binary {
 
 impl VM {
     pub fn interpret(&mut self, chunk: Chunk) -> Result<(), LoxError> {
-        self.chunk = chunk;
-        self.ip = 0;
+        self.frames.push(Frame::new(chunk));
 
         self.run()
     }
@@ -64,169 +61,232 @@ impl VM {
     }
 
     pub fn with_debug(self) -> Self {
-        Self { debug: true, ..self }
+        Self {
+            debug: true,
+            ..self
+        }
+    }
+
+    pub fn frame(&self) -> Option<Frame> {
+        self.frames.last().cloned()
     }
 
     fn run(&mut self) -> Result<(), LoxError> {
-        while let Some(instruction) = self.chunk.code.get(self.ip) {
-            self.ip += 1;
+        while let Some(frame) = self.frame() {
+            if let Some(instruction) = frame.opcode() {
+                self.step();
 
-            if self.debug {
-                println!("{:?}", self);
-            }
+                if self.debug {
+                    println!("{:?}", self);
+                }
 
-            match instruction {
-                OpCode::Nil => self.stack.push(Value::Nil),
-                OpCode::True => self.stack.push(Value::Bool(true)),
-                OpCode::False => self.stack.push(Value::Bool(false)),
-                OpCode::Constant(idx) => {
-                    if let Some(value) = self.chunk.constants.get(*idx) {
-                        self.stack.push(value.clone());
-                    } else {
-                        return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ))
-                    }
-                },
-
-                OpCode::DefineGlobal(idx) => {
-                    if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
-                        let key = key.clone();
-                        let value = self.pop()?;
-                        self.globals.insert(key, value);
-                    } else {
-                        return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ))
-                    }
-                },
-                OpCode::GetGlobal(idx) => {
-                    if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
-                        let key = key.clone();
-                        if let Some(value) = self.globals.get(&key) {
+                match instruction {
+                    OpCode::Nil => self.stack.push(Value::Nil),
+                    OpCode::True => self.stack.push(Value::Bool(true)),
+                    OpCode::False => self.stack.push(Value::Bool(false)),
+                    OpCode::Constant(idx) => {
+                        if let Some(value) = frame.constant(*idx) {
                             self.stack.push(value.clone());
                         } else {
                             return Err(errors::runtime(
-                                self.chunk.location(self.ip - 1),
+                            frame.last_location(),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ));
+                        }
+                    }
+
+                    OpCode::DefineGlobal(idx) => {
+                        if let Some(Value::String(key)) = frame.constant(*idx) {
+                            let key = key.clone();
+                            let value = self.pop()?;
+                            self.globals.insert(key, value);
+                        } else {
+                            return Err(errors::runtime(
+                            frame.last_location(),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ));
+                        }
+                    }
+                    OpCode::GetGlobal(idx) => {
+                        if let Some(Value::String(key)) = frame.constant(*idx) {
+                            let key = key.clone();
+                            if let Some(value) = self.globals.get(&key) {
+                                self.stack.push(value.clone());
+                            } else {
+                                return Err(errors::runtime(
+                                frame.last_location(),
                                 &format!("The variable '{}' is not defined.", key),
                                 "Make sure that you have defined the variable using the `var` keyword before referencing it."
-                            ))
+                            ));
+                            }
+                        } else {
+                            return Err(errors::runtime(
+                            frame.last_location(),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine."
+                        ));
                         }
-                    } else {
-                        return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
+                    }
+                    OpCode::SetGlobal(idx) => {
+                        if let Some(Value::String(key)) = frame.constant(*idx) {
+                            let key = key.clone();
+                            let value = self.peek()?;
+                            self.globals.insert(key, value);
+                        } else {
+                            return Err(errors::runtime(
+                            frame.last_location(),
                             "Invalid constant index in byte code.",
                             "Make sure that you are passing valid constant indices to the virtual machine."
-                        ))
+                        ));
+                        }
                     }
-                },
-                OpCode::SetGlobal(idx) => {
-                    if let Some(Value::String(key)) = self.chunk.constants.get(*idx) {
-                        let key = key.clone();
-                        let value = self.peek()?;
-                        self.globals.insert(key, value);
-                    } else {
-                        return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ))
-                    }
-                },
 
-                OpCode::DefineLocal => {
-                    let value = self.pop()?;
-                    self.locals.push(value);
-                },
-                OpCode::GetLocal(idx) => {
-                    if let Some(value) = self.locals.get(*idx) {
-                        self.stack.push(value.clone());
-                    } else {
-                        return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
+                    OpCode::DefineLocal => {
+                        let value = self.pop()?;
+                        self.stack.push(value);
+                    }
+                    OpCode::GetLocal(idx) => {
+                        if let Some(value) = self.stack.get(
+                            self.frames
+                                .last()
+                                .map(|f| f.stack_offset)
+                                .unwrap_or_default()
+                                + *idx,
+                        ) {
+                            self.stack.push(value.clone());
+                        } else {
+                            return Err(errors::runtime(
+                            frame.last_location(),
                             "Invalid local index in byte code.",
                             "Make sure that you are passing valid local indices to the virtual machine."
-                        ))
+                        ));
+                        }
                     }
-                },
-                OpCode::SetLocal(idx) => {
-                    let idx = *idx;
-                    let value = self.pop()?;
+                    OpCode::SetLocal(idx) => {
+                        let idx = self
+                            .frames
+                            .last()
+                            .map(|f| f.stack_offset)
+                            .unwrap_or_default()
+                            + *idx;
+                        let value = self.pop()?;
 
-                    if idx >= self.locals.len() {
-                        return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
-                            "Invalid local index in byte code.",
-                            "Make sure that you are passing valid local indices to the virtual machine."
-                        ))
+                        if idx >= self.stack.len() {
+                            return Err(errors::runtime(
+                            frame.last_location(),
+                            "Invalid stack index in byte code for local assignment.",
+                            "Make sure that you are passing valid stack indices to the virtual machine."
+                        ));
+                        }
+
+                        self.stack[idx] = value;
+                    }
+                    OpCode::TruncateLocals(len) => {
+                        self.stack.truncate(
+                            self.frames
+                                .last()
+                                .map(|f| f.stack_offset)
+                                .unwrap_or_default()
+                                + *len,
+                        );
                     }
 
-                    self.locals[idx] = value;
-                },
-                OpCode::TruncateLocals(len) => {
-                    self.locals.truncate(*len);
-                }
-
-                OpCode::Add => op_binary!(
-                    self(left, right),
+                    OpCode::Add => op_binary!(
+                    self(frame, left, right),
                     Number: (left + right) => Number,
                     String: (format!("{}{}", left, right)) => String),
-                OpCode::Subtract => op_binary!(self(left, right), Number: (left - right) => Number),
-                OpCode::Multiply => op_binary!(self(left, right), Number: (left * right) => Number),
-                OpCode::Divide => op_binary!(self(left, right), Number: (left / right) => Number),
+                    OpCode::Subtract => {
+                        op_binary!(self(frame, left, right), Number: (left - right) => Number)
+                    }
+                    OpCode::Multiply => {
+                        op_binary!(self(frame, left, right), Number: (left * right) => Number)
+                    }
+                    OpCode::Divide => {
+                        op_binary!(self(frame, left, right), Number: (left / right) => Number)
+                    }
 
-                OpCode::Negate => {
-                    match self.pop()? {
-                        Value::Number(n) => self.stack.push(Value::Number(-n)),
-                        _ => return Err(errors::runtime(
-                            self.chunk.location(self.ip - 1),
-                            "Operand must be a number.",
-                            "Make sure that you are passing a number to the negate operator."
-                        ))
+                    OpCode::Negate => {
+                        match self.pop()? {
+                            Value::Number(n) => self.stack.push(Value::Number(-n)),
+                            _ => return Err(errors::runtime(
+                                frame.last_location(),
+                                "Operand must be a number.",
+                                "Make sure that you are passing a number to the negate operator.",
+                            )),
+                        }
+                    }
+                    OpCode::Not => {
+                        let value = self.pop()?;
+                        self.push(Value::Bool(!value.is_truthy()));
+                    }
+
+                    OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
+                    OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
+                    OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
+
+                    OpCode::Pop => {
+                        self.pop()?;
+                    }
+                    OpCode::Print => {
+                        let value = self.pop()?;
+                        writeln!(self.output, "{}", value)?;
+                    }
+
+                    OpCode::Call(arity) => {
+                        let call_arity = *arity;
+                        match self.stack.get(self.stack.len() - call_arity - 2) {
+                            Some(Value::Function(Function::Closure{chunk, arity, ..})) => {
+                                if *arity != call_arity {
+                                    return Err(errors::runtime(
+                                        frame.last_location(),
+                                        format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
+                                        "Make sure that you are passing the correct number of arguments to the function."
+                                    ));
+                                }
+
+                                let new_frame = Frame::call(chunk.clone(), self.stack.len() - arity - 1);
+                                self.frames.push(new_frame);
+                            },
+                            Some(target) => Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Unsupported calling target {:?}", target),
+                                "Make sure that you are calling a valid function or class constructor."))?,
+                            None => Err(errors::runtime(
+                                frame.last_location(),
+                                "Callee could not be retrieved from the stack based on the known calling convention.",
+                                "Please report this issue to us on GitHub with example code."))?,
+                        };
+
+                        
+                    },
+                    OpCode::Return => {
+                        self.stack.truncate(frame.stack_offset);
+                        self.frames.pop();
+                    }
+
+                    OpCode::Jump(ip) => {
+                        self.jump(*ip);
+                    }
+                    OpCode::JumpIf(ip) => {
+                        let ip = *ip;
+                        let value = self.peek()?;
+                        if value.is_truthy() {
+                            self.jump(ip);
+                        }
+                    }
+                    OpCode::JumpIfFalse(ip) => {
+                        let ip = *ip;
+                        let value = self.peek()?;
+                        if !value.is_truthy() {
+                            self.jump(ip);
+                        }
                     }
                 }
-                OpCode::Not => {
-                    let value = self.pop()?;
-                    self.push(Value::Bool(!value.is_truthy()));
-                }
-
-                OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
-                OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
-                OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
-
-                OpCode::Pop => { self.pop()?; },
-                OpCode::Print => {
-                    let value = self.pop()?;
-                    writeln!(self.output, "{}", value)?;
-                }
-                OpCode::Return => {
-                    let value = self.pop()?;
-                    writeln!(self.output, "{}", value)?;
-
-                    return Ok(());
-                },
-
-                OpCode::Jump(ip) => {
-                    self.ip = *ip;
-                },
-                OpCode::JumpIf(ip) => {
-                    let ip  = *ip;
-                    let value = self.peek()?;
-                    if value.is_truthy() {
-                        self.ip = ip;
-                    }
-                },
-                OpCode::JumpIfFalse(ip) => {
-                    let ip = *ip;
-                    let value = self.peek()?;
-                    if !value.is_truthy() {
-                        self.ip = ip;
-                    }
-                },
+            } else {
+                self.stack.truncate(frame.stack_offset);
+                self.frames.pop();
             }
         }
 
@@ -242,9 +302,10 @@ impl VM {
             Ok(value)
         } else {
             Err(errors::runtime(
-                self.chunk.location(self.ip - 1),
+                self.frame().map(|f| f.last_location()).unwrap_or(Loc::Unknown),
                 "Attempted to pop with no values on the stack.",
-                "Don't try to do this? o.O"))
+                "Don't try to do this? o.O",
+            ))
         }
     }
 
@@ -253,17 +314,25 @@ impl VM {
             Ok(value.clone())
         } else {
             Err(errors::runtime(
-                self.chunk.location(self.ip - 1),
+                self.frame().map(|f| f.last_location()).unwrap_or(Loc::Unknown),
                 "Attempted to peek with no values on the stack.",
-                "Don't try to do this? o.O"))
+                "Don't try to do this? o.O",
+            ))
         }
+    }
+
+    fn step(&mut self) {
+        self.frames.last_mut().unwrap().ip += 1;
+    }
+
+    fn jump(&mut self, ip: usize) {
+        self.frames.last_mut().unwrap().ip = ip;
     }
 }
 
 impl Debug for VM {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Chunk: ")?;
-        self.chunk.disassemble(self.ip, f)?;
+        writeln!(f, "Chunk: {:?}", self.frame().expect("a frame"))?;
 
         write!(f, "Stack:")?;
         for value in self.stack.iter() {
@@ -272,7 +341,12 @@ impl Debug for VM {
         writeln!(f)?;
 
         write!(f, "Locals:")?;
-        for value in self.locals.iter() {
+        for value in self.stack.iter().skip(
+            self.frames
+                .last()
+                .map(|f| f.stack_offset)
+                .unwrap_or_default(),
+        ) {
             write!(f, "[{}] ", value)?;
         }
         writeln!(f)?;
@@ -291,12 +365,10 @@ impl Default for VM {
             debug: false,
             output: Box::new(std::io::stdout()),
 
-            chunk: Chunk::default(),
-            ip: 0,
             stack: Vec::new(),
 
             globals: HashMap::new(),
-            locals: Vec::new(),
+            frames: Vec::new(),
         }
     }
 }
@@ -332,22 +404,19 @@ mod tests {
     }
 
     macro_rules! run {
-        ($chunk:expr => $val:expr) => {
-            {
-                let output = Box::new(CaptureOutput::default());
-                VM::default().with_output(output.clone()).interpret($chunk).expect("no errors");
-                assert_eq!(output.to_string().trim(), format!("{}", $val).trim());
-            }
-        };
+        ($chunk:expr => $val:expr) => {{
+            let output = Box::new(CaptureOutput::default());
+            VM::default()
+                .with_output(output.clone())
+                .interpret($chunk)
+                .expect("no errors");
+            assert_eq!(output.to_string().trim(), format!("{}", $val).trim());
+        }};
     }
 
     #[test]
     fn test_negate() {
-        let chunk = chunk!(
-            Constant[Number = 123],
-            Negate,
-            Return
-        );
+        let chunk = chunk!(Constant[Number = 123], Negate, Print);
 
         run!(chunk => "-123");
     }
@@ -361,7 +430,7 @@ mod tests {
             Constant[Number = 5.6],
             Divide,
             Negate,
-            Return
+            Print
         );
 
         run!(chunk => -((3.4 + 1.2)/5.6));
@@ -376,7 +445,7 @@ mod tests {
             Divide,
             Constant[Number = 3],
             Multiply,
-            Return
+            Print
         );
 
         run!(chunk => 15);
@@ -384,11 +453,7 @@ mod tests {
 
     #[test]
     fn test_boolean() {
-        let chunk = chunk!(
-            True,
-            Not,
-            Print
-        );
+        let chunk = chunk!(True, Not, Print);
 
         run!(chunk => false);
     }
