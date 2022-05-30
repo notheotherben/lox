@@ -224,7 +224,6 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
         self.scope_depth -= 1;
         self.locals.truncate(parent_locals_len);
-        self.chunk.write(OpCode::TruncateLocals(parent_locals_len), Loc::Native);
 
         Ok(())
     }
@@ -261,14 +260,15 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
         self.chunk.write(OpCode::JumpIfFalse(0), token.location());
         let jmp_else = self.chunk.len() - 1;
+
         self.visit_stmt(then_branch)?;
 
         if let Some(else_branch) = else_branch {
             self.chunk.write(OpCode::Jump(0), Loc::Native);
             let jump_end = self.chunk.len() - 1;
-            
             self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_else);
             self.chunk.write(OpCode::Pop, Loc::Native);
+            
             self.visit_stmt(else_branch)?;
             
             self.chunk.overwrite(OpCode::Jump(self.chunk.len()), jump_end);
@@ -276,6 +276,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
             self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_else);
             self.chunk.write(OpCode::Pop, Loc::Native);
         }
+        
 
         Ok(())
     }
@@ -302,7 +303,6 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
         if self.scope_depth > 0 {
             self.define_local(name);
-            self.chunk.write(OpCode::DefineLocal, name.location());
         } else {
             let ptr = self.identifier(name.lexeme());
             self.chunk.write(OpCode::DefineGlobal(ptr), name.location());
@@ -366,6 +366,18 @@ mod tests {
     }
 
     macro_rules! run {
+        (runtime_err: $src:expr => $val:expr) => {
+            {
+                let stmts = parse($src);
+
+                let chunk = compile(&stmts).expect("no errors");
+
+                let _output = Box::new(CaptureOutput::default());
+                let err = VM::default().with_output(_output.clone()).interpret(chunk).expect_err("expected error");
+                assert_eq!(format!("{}", err), format!("{}", $val).trim());
+            }
+        };
+
         ($src:expr => $val:expr) => {
             {
                 let stmts = parse($src);
@@ -456,5 +468,24 @@ mod tests {
         run!("var foo = fun () { print 1; }; print foo;" => "<fn @anonymous>");
         run!("fun foo() { print 1; } foo();" => 1);
         run!("fun foo() { print 1; } foo(); foo();" => "1\n1");
+    }
+
+    #[test]
+    fn stacktraces() {
+        run!(runtime_err: r#"
+fun a() { b(); }
+fun b() { c(); }
+fun c() {
+    c("too", "many");
+}
+
+a();
+        "# => ("Invalid number of arguments, got 2 but expected 0.
+Make sure that you are passing the correct number of arguments to the function.
+
+  [line 5] in c()
+  [line 3] in b()
+  [line 2] in a()
+  [line 8] in script"))
     }
 }

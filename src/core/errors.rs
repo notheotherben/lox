@@ -5,6 +5,7 @@ pub enum LoxError {
     System(String, String),
     Language(Loc, String, String),
     Runtime(Loc, String, String),
+    RuntimeStacktrace(String, String, Vec<String>),
     User(String),
 }
 
@@ -15,6 +16,7 @@ impl LoxError {
             LoxError::Language(_, msg, ..) => msg,
             LoxError::Runtime(_, msg, ..) => msg,
             LoxError::User(msg) => msg,
+            LoxError::RuntimeStacktrace(msg, ..) => msg,
         }
     }
 }
@@ -35,6 +37,10 @@ pub fn user<M: Into<String>>(message: M) -> LoxError {
     LoxError::User(message.into())
 }
 
+pub fn runtime_stacktrace<M: Into<String>, A: Into<String>, S: Into<Vec<String>>>(message: M, advice: A, stacktrace: S) -> LoxError {
+    LoxError::RuntimeStacktrace(message.into(), advice.into(), stacktrace.into())
+}
+
 impl std::error::Error for LoxError {}
 
 impl std::fmt::Display for LoxError {
@@ -44,6 +50,9 @@ impl std::fmt::Display for LoxError {
             LoxError::Language(loc, msg, advice) => write!(f, "[{}]: {}\n{}", loc, msg, advice),
             LoxError::Runtime(loc, msg, advice) => write!(f, "[{}] {}\n{}", loc, msg, advice),
             LoxError::User(msg) => write!(f, "{}", msg),
+            LoxError::RuntimeStacktrace(msg, advice, stacktrace) => {
+                write!(f, "{}\n{}\n\n  {}", msg, advice, stacktrace.join("\n  "))
+            }
         }
     }
 }

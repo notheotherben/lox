@@ -51,7 +51,7 @@ macro_rules! op_binary {
 
 impl VM {
     pub fn interpret(&mut self, chunk: Chunk) -> Result<(), LoxError> {
-        self.frames.push(Frame::new(chunk));
+        self.frames.push(Frame::root(chunk));
 
         self.run()
     }
@@ -73,222 +73,237 @@ impl VM {
 
     fn run(&mut self) -> Result<(), LoxError> {
         while let Some(frame) = self.frame() {
-            if let Some(instruction) = frame.opcode() {
-                self.step();
+            if let Some(&instruction) = frame.opcode() {
+                self.frames.last_mut().unwrap().ip += 1;
 
                 if self.debug {
                     println!("{:?}", self);
                 }
 
-                match instruction {
-                    OpCode::Nil => self.stack.push(Value::Nil),
-                    OpCode::True => self.stack.push(Value::Bool(true)),
-                    OpCode::False => self.stack.push(Value::Bool(false)),
-                    OpCode::Constant(idx) => {
-                        if let Some(value) = frame.constant(*idx) {
-                            self.stack.push(value.clone());
-                        } else {
-                            return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ));
-                        }
-                    }
+                match self.step(frame, instruction) {
+                    Ok(()) => (),
+                    Err(LoxError::Runtime(_loc, msg, advice)) => {
+                        let mut stack = Vec::new();
 
-                    OpCode::DefineGlobal(idx) => {
-                        if let Some(Value::String(key)) = frame.constant(*idx) {
-                            let key = key.clone();
-                            let value = self.pop()?;
-                            self.globals.insert(key, value);
-                        } else {
-                            return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ));
-                        }
-                    }
-                    OpCode::GetGlobal(idx) => {
-                        if let Some(Value::String(key)) = frame.constant(*idx) {
-                            let key = key.clone();
-                            if let Some(value) = self.globals.get(&key) {
-                                self.stack.push(value.clone());
-                            } else {
-                                return Err(errors::runtime(
-                                frame.last_location(),
-                                &format!("The variable '{}' is not defined.", key),
-                                "Make sure that you have defined the variable using the `var` keyword before referencing it."
-                            ));
-                            }
-                        } else {
-                            return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ));
-                        }
-                    }
-                    OpCode::SetGlobal(idx) => {
-                        if let Some(Value::String(key)) = frame.constant(*idx) {
-                            let key = key.clone();
-                            let value = self.peek()?;
-                            self.globals.insert(key, value);
-                        } else {
-                            return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine."
-                        ));
-                        }
-                    }
-
-                    OpCode::DefineLocal => {
-                        let value = self.pop()?;
-                        self.stack.push(value);
-                    }
-                    OpCode::GetLocal(idx) => {
-                        if let Some(value) = self.stack.get(
-                            self.frames
-                                .last()
-                                .map(|f| f.stack_offset)
-                                .unwrap_or_default()
-                                + *idx,
-                        ) {
-                            self.stack.push(value.clone());
-                        } else {
-                            return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid local index in byte code.",
-                            "Make sure that you are passing valid local indices to the virtual machine."
-                        ));
-                        }
-                    }
-                    OpCode::SetLocal(idx) => {
-                        let idx = self
-                            .frames
-                            .last()
-                            .map(|f| f.stack_offset)
-                            .unwrap_or_default()
-                            + *idx;
-                        let value = self.pop()?;
-
-                        if idx >= self.stack.len() {
-                            return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid stack index in byte code for local assignment.",
-                            "Make sure that you are passing valid stack indices to the virtual machine."
-                        ));
+                        for frame in self.frames.iter().rev() {
+                            stack.push(format!("{}", &frame));
                         }
 
-                        self.stack[idx] = value;
-                    }
-                    OpCode::TruncateLocals(len) => {
-                        self.stack.truncate(
-                            self.frames
-                                .last()
-                                .map(|f| f.stack_offset)
-                                .unwrap_or_default()
-                                + *len,
-                        );
-                    }
-
-                    OpCode::Add => op_binary!(
-                    self(frame, left, right),
-                    Number: (left + right) => Number,
-                    String: (format!("{}{}", left, right)) => String),
-                    OpCode::Subtract => {
-                        op_binary!(self(frame, left, right), Number: (left - right) => Number)
-                    }
-                    OpCode::Multiply => {
-                        op_binary!(self(frame, left, right), Number: (left * right) => Number)
-                    }
-                    OpCode::Divide => {
-                        op_binary!(self(frame, left, right), Number: (left / right) => Number)
-                    }
-
-                    OpCode::Negate => {
-                        match self.pop()? {
-                            Value::Number(n) => self.stack.push(Value::Number(-n)),
-                            _ => return Err(errors::runtime(
-                                frame.last_location(),
-                                "Operand must be a number.",
-                                "Make sure that you are passing a number to the negate operator.",
-                            )),
-                        }
-                    }
-                    OpCode::Not => {
-                        let value = self.pop()?;
-                        self.push(Value::Bool(!value.is_truthy()));
-                    }
-
-                    OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
-                    OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
-                    OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
-
-                    OpCode::Pop => {
-                        self.pop()?;
-                    }
-                    OpCode::Print => {
-                        let value = self.pop()?;
-                        writeln!(self.output, "{}", value)?;
-                    }
-
-                    OpCode::Call(arity) => {
-                        let call_arity = *arity;
-                        match self.stack.get(self.stack.len() - call_arity - 2) {
-                            Some(Value::Function(Function::Closure{chunk, arity, ..})) => {
-                                if *arity != call_arity {
-                                    return Err(errors::runtime(
-                                        frame.last_location(),
-                                        format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
-                                        "Make sure that you are passing the correct number of arguments to the function."
-                                    ));
-                                }
-
-                                let new_frame = Frame::call(chunk.clone(), self.stack.len() - arity - 1);
-                                self.frames.push(new_frame);
-                            },
-                            Some(target) => Err(errors::runtime(
-                                frame.last_location(),
-                                format!("Unsupported calling target {:?}", target),
-                                "Make sure that you are calling a valid function or class constructor."))?,
-                            None => Err(errors::runtime(
-                                frame.last_location(),
-                                "Callee could not be retrieved from the stack based on the known calling convention.",
-                                "Please report this issue to us on GitHub with example code."))?,
-                        };
-
-                        
+                        return Err(errors::runtime_stacktrace(msg, advice, stack))
                     },
-                    OpCode::Return => {
-                        self.stack.truncate(frame.stack_offset);
-                        self.frames.pop();
-                    }
-
-                    OpCode::Jump(ip) => {
-                        self.jump(*ip);
-                    }
-                    OpCode::JumpIf(ip) => {
-                        let ip = *ip;
-                        let value = self.peek()?;
-                        if value.is_truthy() {
-                            self.jump(ip);
-                        }
-                    }
-                    OpCode::JumpIfFalse(ip) => {
-                        let ip = *ip;
-                        let value = self.peek()?;
-                        if !value.is_truthy() {
-                            self.jump(ip);
-                        }
-                    }
+                    Err(err) => return Err(err),
                 }
             } else {
                 self.stack.truncate(frame.stack_offset);
                 self.frames.pop();
             }
         }
+
+        if !self.stack.is_empty() {
+            return Err(errors::system(
+                "Stack is not empty at the end of the script.",
+                "Make sure that you are returning a value from the script."
+            ))
+        }
+
+        Ok(())
+    }
+
+    fn step(&mut self, frame: Frame, instruction: OpCode) -> Result<(), LoxError> {
+        match instruction {
+            OpCode::Nil => self.stack.push(Value::Nil),
+            OpCode::True => self.stack.push(Value::Bool(true)),
+            OpCode::False => self.stack.push(Value::Bool(false)),
+            OpCode::Constant(idx) => {
+                if let Some(value) = frame.constant(idx) {
+                    self.stack.push(value.clone());
+                } else {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Invalid constant index in byte code.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ));
+                }
+            }
+
+            OpCode::DefineGlobal(idx) => {
+                if let Some(Value::String(key)) = frame.constant(idx) {
+                    let key = key.clone();
+                    let value = self.pop()?;
+                    self.globals.insert(key, value);
+                } else {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Invalid constant index in byte code.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ));
+                }
+            }
+            OpCode::GetGlobal(idx) => {
+                if let Some(Value::String(key)) = frame.constant(idx) {
+                    let key = key.clone();
+                    if let Some(value) = self.globals.get(&key) {
+                        self.stack.push(value.clone());
+                    } else {
+                        return Err(errors::runtime(
+                        frame.last_location(),
+                        &format!("The variable '{}' is not defined.", key),
+                        "Make sure that you have defined the variable using the `var` keyword before referencing it."
+                    ));
+                    }
+                } else {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Invalid constant index in byte code.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ));
+                }
+            }
+            OpCode::SetGlobal(idx) => {
+                if let Some(Value::String(key)) = frame.constant(idx) {
+                    let key = key.clone();
+                    let value = self.peek()?;
+                    self.globals.insert(key, value);
+                } else {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Invalid constant index in byte code.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ));
+                }
+            }
+
+            OpCode::GetLocal(idx) => {
+                if let Some(value) = self.stack.get(
+                    self.frames
+                        .last()
+                        .map(|f| f.stack_offset)
+                        .unwrap_or_default()
+                        + idx,
+                ) {
+                    self.stack.push(value.clone());
+                } else {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Invalid local index in byte code.",
+                    "Make sure that you are passing valid local indices to the virtual machine."
+                ));
+                }
+            }
+            OpCode::SetLocal(idx) => {
+                let idx = self
+                    .frames
+                    .last()
+                    .map(|f| f.stack_offset)
+                    .unwrap_or_default()
+                    + idx;
+                let value = self.pop()?;
+
+                if idx >= self.stack.len() {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Invalid stack index in byte code for local assignment.",
+                    "Make sure that you are passing valid stack indices to the virtual machine."
+                ));
+                }
+
+                self.stack[idx] = value;
+            }
+
+            OpCode::Add => op_binary!(
+            self(frame, left, right),
+            Number: (left + right) => Number,
+            String: (format!("{}{}", left, right)) => String),
+            OpCode::Subtract => {
+                op_binary!(self(frame, left, right), Number: (left - right) => Number)
+            }
+            OpCode::Multiply => {
+                op_binary!(self(frame, left, right), Number: (left * right) => Number)
+            }
+            OpCode::Divide => {
+                op_binary!(self(frame, left, right), Number: (left / right) => Number)
+            }
+
+            OpCode::Negate => match self.pop()? {
+                Value::Number(n) => self.stack.push(Value::Number(-n)),
+                _ => {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Operand must be a number.",
+                        "Make sure that you are passing a number to the negate operator.",
+                    ))
+                }
+            },
+            OpCode::Not => {
+                let value = self.pop()?;
+                self.push(Value::Bool(!value.is_truthy()));
+            }
+
+            OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
+            OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
+            OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
+
+            OpCode::Pop => {
+                self.pop()?;
+            }
+            OpCode::Print => {
+                let value = self.pop()?;
+                writeln!(self.output, "{}", value)?;
+            }
+
+            OpCode::Call(call_arity) => {
+                if self.frames.len() >= 1000 {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "The maximum call stack size has been exceeded.",
+                        "Make sure that you are not calling functions with unbounded recursion.",
+                    ));
+                }
+
+                match self.stack.get(self.stack.len() - call_arity - 2) {
+                    Some(Value::Function(Function::Closure{name, chunk, arity, ..})) => {
+                        if *arity != call_arity {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
+                                "Make sure that you are passing the correct number of arguments to the function."
+                            ));
+                        }
+
+                        let new_frame = Frame::call(name.clone(), chunk.clone(), self.stack.len() - arity - 1);
+                        self.frames.push(new_frame);
+                    },
+                    Some(target) => Err(errors::runtime(
+                        frame.last_location(),
+                        format!("Unsupported calling target {:?}", target),
+                        "Make sure that you are calling a valid function or class constructor."))?,
+                    None => Err(errors::runtime(
+                        frame.last_location(),
+                        "Callee could not be retrieved from the stack based on the known calling convention.",
+                        "Please report this issue to us on GitHub with example code."))?,
+                };
+            }
+            OpCode::Return => {
+                self.stack.truncate(frame.stack_offset);
+                self.frames.pop();
+            }
+
+            OpCode::Jump(ip) => {
+                self.jump(ip);
+            }
+            OpCode::JumpIf(ip) => {
+                let value = self.peek()?;
+                if value.is_truthy() {
+                    self.jump(ip);
+                }
+            }
+            OpCode::JumpIfFalse(ip) => {
+                let value = self.peek()?;
+                if !value.is_truthy() {
+                    self.jump(ip);
+                }
+            }
+        };
 
         Ok(())
     }
@@ -302,7 +317,9 @@ impl VM {
             Ok(value)
         } else {
             Err(errors::runtime(
-                self.frame().map(|f| f.last_location()).unwrap_or(Loc::Unknown),
+                self.frame()
+                    .map(|f| f.last_location())
+                    .unwrap_or(Loc::Unknown),
                 "Attempted to pop with no values on the stack.",
                 "Don't try to do this? o.O",
             ))
@@ -314,15 +331,13 @@ impl VM {
             Ok(value.clone())
         } else {
             Err(errors::runtime(
-                self.frame().map(|f| f.last_location()).unwrap_or(Loc::Unknown),
+                self.frame()
+                    .map(|f| f.last_location())
+                    .unwrap_or(Loc::Unknown),
                 "Attempted to peek with no values on the stack.",
                 "Don't try to do this? o.O",
             ))
         }
-    }
-
-    fn step(&mut self) {
-        self.frames.last_mut().unwrap().ip += 1;
     }
 
     fn jump(&mut self, ip: usize) {
