@@ -34,6 +34,7 @@ pub enum OpCode {
     Return,
 
     Jump(usize),
+    JumpIf(usize),
     JumpIfFalse(usize),
 }
 
@@ -71,6 +72,7 @@ impl Display for OpCode {
             OpCode::Return => write!(f, "OP_RETURN"),
 
             OpCode::Jump(..) => write!(f, "OP_JUMP"),
+            OpCode::JumpIf(..) => write!(f, "OP_JUMP_IF"),
             OpCode::JumpIfFalse(..) => write!(f, "OP_JUMP_IF_FALSE"),
         }
     }

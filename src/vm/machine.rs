@@ -209,9 +209,16 @@ impl VM {
                 OpCode::Jump(ip) => {
                     self.ip = *ip;
                 },
+                OpCode::JumpIf(ip) => {
+                    let ip  = *ip;
+                    let value = self.peek()?;
+                    if value.is_truthy() {
+                        self.ip = ip;
+                    }
+                },
                 OpCode::JumpIfFalse(ip) => {
                     let ip = *ip;
-                    let value = self.pop()?;
+                    let value = self.peek()?;
                     if !value.is_truthy() {
                         self.ip = ip;
                     }

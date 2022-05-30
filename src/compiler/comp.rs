@@ -113,7 +113,32 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<(), LoxError> {
-        todo!()
+        self.visit_expr(left)?;
+
+        match op {
+            Token::Or(..) => {
+                self.chunk.write(OpCode::JumpIf(0), op.location());
+                let jmp = self.chunk.len() - 1;
+
+                self.chunk.write(OpCode::Pop, op.location());
+                self.visit_expr(right)?;
+                self.chunk.overwrite(OpCode::JumpIf(self.chunk.len()), jmp);
+            },
+            Token::And(..) => {
+                self.chunk.write(OpCode::JumpIfFalse(0), op.location());
+                let jmp = self.chunk.len() - 1;
+
+                self.chunk.write(OpCode::Pop, op.location());
+                self.visit_expr(right)?;
+                self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp);
+            },
+            token => return Err(errors::language(
+                op.location(),
+                &format!("Received unexpected logical operator {:?}", token),
+                "Report this error with the compiler to us on GitHub with sample code to reproduce the error."))
+        }
+
+        Ok(())
     }
 
     fn visit_set(&mut self, obj: &Expr, property: &Token, value: &Expr) -> Result<(), LoxError> {
@@ -203,11 +228,13 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
             let jump_end = self.chunk.len() - 1;
             
             self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_else);
+            self.chunk.write(OpCode::Pop, Loc::Native);
             self.visit_stmt(else_branch)?;
             
             self.chunk.overwrite(OpCode::Jump(self.chunk.len()), jump_end);
         } else {
             self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_else);
+            self.chunk.write(OpCode::Pop, Loc::Native);
         }
 
         Ok(())
@@ -332,5 +359,17 @@ mod tests {
         run!("if (false) { print true; }" => "");
         run!("if (true) { print true; } else { print false; }" => true);
         run!("if (false) { print true; } else { print false; }" => false);
+    }
+
+    #[test]
+    fn test_logical() {
+        run!("print 1 and 2;" => 2);
+        run!("print 1 and false;" => false);
+        run!("print false and 1;" => false);
+        run!("print nil and false;" => "nil");
+        run!("print 1 or 2;" => 1);
+        run!("print true or false;" => true);
+        run!("print false or true;" => true);
+        run!("print false or false;" => false);
     }
 }
