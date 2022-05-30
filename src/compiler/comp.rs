@@ -272,7 +272,17 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_while(&mut self, expr: &Expr, body: &Stmt) -> Result<(), LoxError> {
-        todo!()
+        let start = self.chunk.len();
+        self.visit_expr(expr)?;
+
+        self.chunk.write(OpCode::JumpIfFalse(0), Loc::Unknown);
+        let jmp_end = self.chunk.len() - 1;
+        self.visit_stmt(body)?;
+        self.chunk.write(OpCode::Jump(start), Loc::Unknown);
+        self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_end);
+        self.chunk.write(OpCode::Pop, Loc::Unknown);
+
+        Ok(())
     }
 }
 
@@ -371,5 +381,10 @@ mod tests {
         run!("print true or false;" => true);
         run!("print false or true;" => true);
         run!("print false or false;" => false);
+    }
+
+    #[test]
+    fn test_while() {
+        run!("var i = 0; while (i < 10) { print i; i = i + 1; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
     }
 }
