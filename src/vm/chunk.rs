@@ -62,6 +62,11 @@ impl Chunk {
                 OpCode::Constant(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::DefineGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::GetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+                OpCode::SetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+
+                OpCode::GetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
+                OpCode::SetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
+                
                 op => writeln!(f, "{}", op),
             }
         } else {

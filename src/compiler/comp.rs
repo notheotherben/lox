@@ -7,6 +7,8 @@ pub struct Compiler {
     pub chunk: Chunk,
 
     identifiers: HashMap<String, usize>,
+    locals: Vec<Token>,
+    scope_depth: usize,
 }
 
 impl Compiler {
@@ -14,14 +16,32 @@ impl Compiler {
         let index = self.identifiers.entry(name.to_string()).or_insert_with(|| self.chunk.add_constant(Value::String(name.to_string())));
         *index
     }
+
+    fn define_local(&mut self, name: &Token) {
+        self.locals.push(name.clone());
+    }
+
+    fn get_local(&mut self, token: &Token) -> Option<usize> {
+        for (idx, local) in self.locals.iter().enumerate().rev() {
+            if local.lexeme() == token.lexeme() {
+                return Some(idx);
+            }
+        }
+
+        None
+    } 
 }
 
 impl ExprVisitor<Result<(), LoxError>> for Compiler {
     fn visit_assign(&mut self, ident: &Token, value: &Expr) -> Result<(), LoxError> {
         self.visit_expr(value)?;
 
-        let index = self.identifier(ident.lexeme());
-        self.chunk.write(OpCode::SetGlobal(index), ident.location());
+        if let Some(idx) = self.get_local(ident) {
+            self.chunk.write(OpCode::SetLocal(idx), ident.location());
+        } else {
+            let idx = self.identifier(ident.lexeme());
+            self.chunk.write(OpCode::SetGlobal(idx), ident.location());
+        }
 
         Ok(())
     }
@@ -125,8 +145,13 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_var_ref(&mut self, name: &Token) -> Result<(), LoxError> {
-        let ptr = self.identifier(name.lexeme());
-        self.chunk.write(OpCode::GetGlobal(ptr), name.location());
+        if let Some(idx) = self.get_local(name) {
+            self.chunk.write(OpCode::GetLocal(idx), name.location());
+        } else {
+            let idx = self.identifier(name.lexeme());
+            self.chunk.write(OpCode::GetGlobal(idx), name.location());
+        }
+
         Ok(())
     }
 }
@@ -138,7 +163,17 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_block(&mut self, stmts: &[Stmt]) -> Result<(), LoxError> {
-        todo!()
+        let parent_locals_len = self.locals.len();
+        self.scope_depth += 1;
+        
+        for stmt in stmts {
+            self.visit_stmt(stmt)?;
+        }
+
+        self.scope_depth -= 1;
+        self.locals.truncate(parent_locals_len);
+
+        Ok(())
     }
 
     fn visit_class(&mut self, name: &Token, superclass: Option<&Expr>, statics: &[Stmt], methods: &[Stmt]) -> Result<(), LoxError> {
@@ -179,8 +214,13 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     fn visit_var_def(&mut self, name: &Token, expr: &Expr) -> Result<(), LoxError> {
         self.visit_expr(expr)?;
 
-        let ptr = self.identifier(name.lexeme());
-        self.chunk.write(OpCode::DefineGlobal(ptr), name.location());
+        if self.scope_depth > 0 {
+            self.define_local(name);
+            self.chunk.write(OpCode::DefineLocal, name.location());
+        } else {
+            let ptr = self.identifier(name.lexeme());
+            self.chunk.write(OpCode::DefineGlobal(ptr), name.location());
+        }
 
         Ok(())
     }
@@ -252,12 +292,18 @@ mod tests {
     }
 
     #[test]
-    fn variables() {
+    fn global_variables() {
         run!("var a = 10; print a;" => 10);
         run!(r#"var beverage = "cafe au lait";
         var breakfast = "beignets with " + beverage;
         print breakfast;"# => "beignets with cafe au lait");
 
         run!("var a = 10; a = 12; print a;" => 12);
+    }
+
+    #[test]
+    fn local_variables() {
+        run!("var a = 10; { var a = 20; print a; } print a;" => "20\n10");
+        run!("var a = 10; { var a = 20; { var a = 30; print a; } print a; } print a;" => "30\n20\n10");
     }
 }

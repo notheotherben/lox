@@ -1,8 +1,8 @@
-use std::{fmt::Debug, collections::{HashSet, HashMap}, rc::Rc};
+use std::{fmt::Debug, collections::HashMap};
 
 use crate::{LoxError, errors};
 
-use super::{chunk::{Chunk}, ops::OpCode, value::Value};
+use super::{chunk::Chunk, ops::OpCode, value::Value};
 
 pub struct VM {
     debug: bool,
@@ -13,6 +13,7 @@ pub struct VM {
     stack: Vec<Value>,
     
     globals: HashMap<String, Value>,
+    locals: Vec<Value>,
 }
 
 macro_rules! op_binary {
@@ -133,6 +134,36 @@ impl VM {
                     }
                 },
 
+                OpCode::DefineLocal => {
+                    let value = self.pop()?;
+                    self.locals.push(value);
+                },
+                OpCode::GetLocal(idx) => {
+                    if let Some(value) = self.locals.get(*idx) {
+                        self.stack.push(value.clone());
+                    } else {
+                        return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Invalid local index in byte code.",
+                            "Make sure that you are passing valid local indices to the virtual machine."
+                        ))
+                    }
+                },
+                OpCode::SetLocal(idx) => {
+                    let idx = *idx;
+                    let value = self.pop()?;
+
+                    if idx >= self.locals.len() {
+                        return Err(errors::runtime(
+                            self.chunk.location(self.ip - 1),
+                            "Invalid local index in byte code.",
+                            "Make sure that you are passing valid local indices to the virtual machine."
+                        ))
+                    }
+
+                    self.locals[idx] = value;
+                },
+
                 OpCode::Add => op_binary!(
                     self(left, right),
                     Number: (left + right) => Number,
@@ -225,6 +256,7 @@ impl Default for VM {
             stack: Vec::new(),
 
             globals: HashMap::new(),
+            locals: Vec::new(),
         }
     }
 }

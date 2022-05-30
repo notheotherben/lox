@@ -11,6 +11,10 @@ pub enum OpCode {
     DefineGlobal(usize),
     GetGlobal(usize),
     SetGlobal(usize),
+
+    DefineLocal,
+    GetLocal(usize),
+    SetLocal(usize),
     
     Add,
     Subtract,
@@ -40,6 +44,10 @@ impl Display for OpCode {
             OpCode::DefineGlobal(..) => write!(f, "OP_DEFINE_GLOBAL"),
             OpCode::GetGlobal(..) => write!(f, "OP_GET_GLOBAL"),
             OpCode::SetGlobal(..) => write!(f, "OP_SET_GLOBAL"),
+
+            OpCode::DefineLocal => write!(f, "OP_DEFINE_LOCAL"),
+            OpCode::GetLocal(..) => write!(f, "OP_GET_LOCAL"),
+            OpCode::SetLocal(..) => write!(f, "OP_SET_LOCAL"),
 
             OpCode::Add => write!(f, "OP_ADD"),
             OpCode::Subtract => write!(f, "OP_SUBTRACT"),
