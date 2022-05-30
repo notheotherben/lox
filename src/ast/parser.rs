@@ -332,11 +332,12 @@ impl Parser {
 
         let condition = Self::expression(context)?;
 
-        rd_consume!(context, RightParen, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.")?;
+        let token = rd_consume!(context, token@RightParen => token, "Expected a closing parenthesis `)` after the `if` keyword's condition", "Make sure you have a closing parenthesis `)` after the `if` keyword's condition.")?;
         
         let then_branch = Self::statement(context)?;
 
         Ok(Stmt::If(
+            token,
             condition,
             Box::new(then_branch),
             if rd_matches!(context, Else).is_some() {

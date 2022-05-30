@@ -392,7 +392,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
         Ok(Value::Nil)
     }
 
-    fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<Value, LoxError> {
+    fn visit_if(&mut self, _token: &Token, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<Value, LoxError> {
         let cond = self.visit_expr(cond)?;
 
         if cond.is_truthy() {

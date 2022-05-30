@@ -295,7 +295,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
         errs
     }
 
-    fn visit_if(&mut self, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Vec<LoxError> {
+    fn visit_if(&mut self, _token: &Token, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Vec<LoxError> {
         vec![
             self.visit_expr(expr),
             self.visit_stmt(then_branch),

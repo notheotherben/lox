@@ -2,20 +2,28 @@ use std::fmt::Display;
 
 use crate::core::Loc;
 
-use super::{value::Value, ops::OpCode};
+use super::{ops::OpCode, value::Value};
 
 #[derive(Debug, Clone, Default)]
 pub struct Chunk {
-    pub (super) code: Vec<OpCode>,
-    pub (super) constants: Vec<Value>,
-    pub (super) locations: Vec<(usize, u8)>,
+    pub(super) code: Vec<OpCode>,
+    pub(super) constants: Vec<Value>,
+    pub(super) locations: Vec<(usize, u8)>,
 }
 
 impl Chunk {
+    pub fn is_empty(&self) -> bool {
+        self.code.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.code.len()
+    }
+
     pub fn write<L: Into<Loc>>(&mut self, op: OpCode, loc: L) {
         self.code.push(op);
         let loc = loc.into();
-        
+
         if let Some(last) = self.locations.last_mut() {
             // Mark unknown/native/EOF locations as the same as the previous location.
             if matches!(loc, Loc::Eof | Loc::Unknown | Loc::Native) || last.0 == loc.line() {
@@ -26,6 +34,10 @@ impl Chunk {
         } else {
             self.locations.push((loc.line(), 1));
         }
+    }
+
+    pub fn overwrite(&mut self, op: OpCode, index: usize) {
+        self.code[index] = op;
     }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
@@ -60,13 +72,18 @@ impl Chunk {
 
             match instruction {
                 OpCode::Constant(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
-                OpCode::DefineGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+                OpCode::DefineGlobal(idx) => {
+                    writeln!(f, "{} {}", instruction, self.constants[*idx])
+                }
                 OpCode::GetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::SetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
 
                 OpCode::GetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
                 OpCode::SetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
                 OpCode::TruncateLocals(len) => writeln!(f, "{} {}", instruction, *len),
+
+                OpCode::Jump(ip) => writeln!(f, "{} {}", instruction, ip + *ip),
+                OpCode::JumpIfFalse(ip) => writeln!(f, "{} {}", instruction, ip),
 
                 op => writeln!(f, "{}", op),
             }
@@ -93,9 +110,9 @@ mod tests {
     #[test]
     fn test_chunk() {
         let mut chunk = Chunk::default();
-        
+
         let constant = chunk.add_constant(Value::Number(1.2));
-        chunk.write(OpCode::Constant(constant),Loc::new(123));
+        chunk.write(OpCode::Constant(constant), Loc::new(123));
 
         chunk.write(OpCode::Return, Loc::new(123));
 

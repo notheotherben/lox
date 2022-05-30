@@ -134,7 +134,7 @@ impl StmtVisitor<String> for AstPrinter {
         result
     }
 
-    fn visit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> String {
+    fn visit_if(&mut self, _token: &Token, cond: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> String {
         let mut result = String::new();
         result.push_str("(if ");
         result.push_str(&self.visit_expr(cond));

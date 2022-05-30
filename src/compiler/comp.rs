@@ -61,7 +61,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
                 self.chunk.write(OpCode::Equal, op.location());
                 self.chunk.write(OpCode::Not, op.location());
             },
-            Token::Greater(..) => self.chunk.write(OpCode::Greater, op.location()),
+            Token::Greater(..) => { self.chunk.write(OpCode::Greater, op.location()); },
             Token::GreaterEqual(..) => {
                 self.chunk.write(OpCode::Less, op.location());
                 self.chunk.write(OpCode::Not, op.location());
@@ -100,12 +100,12 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
             Literal::Number(value) => {
                 let ptr = self.chunk.add_constant(Value::Number(*value));
 
-                self.chunk.write(OpCode::Constant(ptr), loc.clone());
+                self.chunk.write(OpCode::Constant(ptr), loc.clone())
             },
             Literal::String(value) => {
                 let ptr = self.chunk.add_constant(Value::String(value.clone()));
 
-                self.chunk.write(OpCode::Constant(ptr), loc.clone());
+                self.chunk.write(OpCode::Constant(ptr), loc.clone())
             },
         };
 
@@ -191,8 +191,26 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         todo!()
     }
 
-    fn visit_if(&mut self, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<(), LoxError> {
-        todo!()
+    fn visit_if(&mut self, token: &Token, expr: &Expr, then_branch: &Stmt, else_branch: Option<&Stmt>) -> Result<(), LoxError> {
+        self.visit_expr(expr)?;
+
+        self.chunk.write(OpCode::JumpIfFalse(0), token.location());
+        let jmp_else = self.chunk.len() - 1;
+        self.visit_stmt(then_branch)?;
+
+        if let Some(else_branch) = else_branch {
+            self.chunk.write(OpCode::Jump(0), Loc::Native);
+            let jump_end = self.chunk.len() - 1;
+            
+            self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_else);
+            self.visit_stmt(else_branch)?;
+            
+            self.chunk.overwrite(OpCode::Jump(self.chunk.len()), jump_end);
+        } else {
+            self.chunk.overwrite(OpCode::JumpIfFalse(self.chunk.len()), jmp_else);
+        }
+
+        Ok(())
     }
 
     fn visit_print(&mut self, loc: &Loc, expr: &Expr) -> Result<(), LoxError> {
@@ -306,5 +324,13 @@ mod tests {
     fn local_variables() {
         run!("var a = 10; { var a = 20; print a; } print a;" => "20\n10");
         run!("var a = 10; { var a = 20; { var a = 30; print a; } print a; } print a;" => "30\n20\n10");
+    }
+
+    #[test]
+    fn test_if() {
+        run!("if (true) { print true; }" => true);
+        run!("if (false) { print true; }" => "");
+        run!("if (true) { print true; } else { print false; }" => true);
+        run!("if (false) { print true; } else { print false; }" => false);
     }
 }
