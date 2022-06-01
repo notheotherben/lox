@@ -85,6 +85,7 @@ impl Chunk {
                 OpCode::JumpIf(ip) => writeln!(f, "{} {}", instruction, ip),
                 OpCode::JumpIfFalse(ip) => writeln!(f, "{} {}", instruction, ip),
 
+                OpCode::Closure(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::Call(arity) => writeln!(f, "{} {}", instruction, arity),
 
                 op => writeln!(f, "{}", op),

@@ -44,7 +44,8 @@ impl Frame {
     }
 
     pub fn last_location(&self) -> Loc {
-        self.chunk.location(self.ip - 1)
+        let ip = if self.ip > 0 { self.ip - 1 } else { 0 };
+        self.chunk.location(ip)
     }
 }
 

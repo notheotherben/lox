@@ -39,10 +39,10 @@ macro_rules! op_binary {
                         $self.push(Value::$res(result))
                     }
                 )+
-                _ => return Err(errors::runtime(
+                (left, right) => return Err(errors::runtime(
                     $frame.last_location(),
-                    "Operands must be numbers.",
-                    "Make sure that you are passing numbers to the $op operator."
+                    format!("Operands must be numbers, but got {} and {}.", left, right),
+                    format!("Make sure that you are passing numbers to the {} operator(s).", stringify!($($op),+)),
                 ))
             }
         }
@@ -283,6 +283,30 @@ impl VM {
                 writeln!(self.output, "{}", value)?;
             }
 
+            OpCode::Closure(idx) => {
+                match frame.constant(idx) {
+                    Some(Value::Function(Function::Closure { name, arity, chunk, .. })) => {
+                        self.push(Value::Function(Function::Closure { name: name.clone(), arity: *arity, chunk: chunk.clone(), upvalues: vec![] }));
+                    },
+                    Some(val@Value::Function(Function::Native { .. })) => {
+                        self.push(val.clone());
+                    },
+                    Some(_) => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine.",
+                        ))
+                    },
+                    None => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            "Invalid constant index in byte code.",
+                            "Make sure that you are passing valid constant indices to the virtual machine.",
+                        ))
+                    }
+                }
+            },
             OpCode::Call(call_arity) => {
                 if self.frames.len() >= 1000 {
                     return Err(errors::runtime(
@@ -338,7 +362,7 @@ impl VM {
                 let result = self.pop()?;
                 self.stack.truncate(frame.stack_offset);
                 if self.frames.pop().is_none() {
-                    self.pop()?;
+                    self.pop()?; // pop callee
                     return Ok(false);
                 }
 

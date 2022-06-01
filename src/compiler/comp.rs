@@ -99,6 +99,8 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     fn visit_fun_expr(&mut self, loc: &Loc, params: &[Token], body: &[Stmt]) -> Result<(), LoxError> {
         let mut comp = Compiler::default();
 
+        comp.define_local(&Token::This(loc.clone()));
+
         for param in params {
             comp.define_local(param);
         }
@@ -106,7 +108,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         comp.visit_block(body)?;
 
         let ptr = self.chunk.add_constant(Value::Function(Function::closure("@anonymous", params.len(), comp.chunk)));
-        self.chunk.write(OpCode::Constant(ptr), loc.clone());
+        self.chunk.write(OpCode::Closure(ptr), loc.clone());
 
         Ok(())
     }
@@ -241,6 +243,8 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     fn visit_fun_def(&mut self, ty: crate::ast::FunType, name: &Token, params: &[Token], body: &[Stmt]) -> Result<(), LoxError> {
         let mut comp = Compiler::default();
 
+        comp.define_local(&Token::This(name.location()));
+
         for param in params {
             comp.define_local(param);
         }
@@ -249,7 +253,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
         let ident = self.identifier(name.lexeme());
         let ptr = self.chunk.add_constant(Value::Function(Function::closure(name.lexeme(), params.len(), comp.chunk)));
-        self.chunk.write(OpCode::Constant(ptr), name.location());
+        self.chunk.write(OpCode::Closure(ptr), name.location());
         self.chunk.write(OpCode::DefineGlobal(ident), name.location());
 
         Ok(())
@@ -497,5 +501,41 @@ Make sure that you are passing the correct number of arguments to the function.
   [line 3] in b()
   [line 2] in a()
   [line 8] in script"))
+    }
+
+    //#[test]
+    fn closures() {
+        run!(r#"var x = "global";
+        fun outer() {
+          var x = "outer";
+          fun inner() {
+            print x;
+          }
+          inner();
+        }
+        outer();"# => "outer");
+
+        run!(r#"
+        fun outer() {
+            var x = "value";
+            fun middle() {
+              fun inner() {
+                print x;
+              }
+          
+              print "create inner closure";
+              return inner;
+            }
+          
+            print "return from outer";
+            return middle;
+          }
+          
+          var mid = outer();
+          var in = mid();
+          in();
+        "# => "return from outer\n\
+        create inner closure\n\
+        value");
     }
 }

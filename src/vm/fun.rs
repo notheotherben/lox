@@ -1,8 +1,11 @@
-use std::{rc::Rc, fmt::{Display, Debug}};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use crate::LoxError;
 
-use super::{Chunk, VM, Value};
+use super::{Chunk, Value, VM};
 
 #[derive(Clone)]
 pub enum Function {
@@ -16,6 +19,7 @@ pub enum Function {
         name: Rc<String>,
         arity: usize,
         chunk: Rc<Chunk>,
+        upvalues: Vec<Rc<Value>>,
     },
 }
 
@@ -25,10 +29,15 @@ impl Function {
             name: Rc::new(name.into()),
             arity,
             chunk: Rc::new(chunk),
+            upvalues: Vec::new(),
         }
     }
 
-    pub fn native<N: Into<String>, F: Fn(&mut VM) -> Result<Value, LoxError> + 'static>(name: N, arity: usize, fun: F) -> Self {
+    pub fn native<N: Into<String>, F: Fn(&mut VM) -> Result<Value, LoxError> + 'static>(
+        name: N,
+        arity: usize,
+        fun: F,
+    ) -> Self {
         Function::Native {
             name: Rc::new(name.into()),
             arity,
@@ -40,11 +49,30 @@ impl Function {
 impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Function::Closure { name: name1, arity: arity1, chunk: chunk1 },
-             Function::Closure { name: name2, arity: arity2, chunk: chunk2 }) => {
-                name1 == name2 && arity1 == arity2 && Rc::ptr_eq(chunk1, chunk2)
-            },
-            _ => false
+            (
+                Function::Closure {
+                    name: name1,
+                    arity: arity1,
+                    chunk: chunk1,
+                    upvalues: upvalues1,
+                },
+                Function::Closure {
+                    name: name2,
+                    arity: arity2,
+                    chunk: chunk2,
+                    upvalues: upvalues2,
+                },
+            ) => {
+                name1 == name2
+                    && arity1 == arity2
+                    && Rc::ptr_eq(chunk1, chunk2)
+                    && upvalues1.len() == upvalues2.len()
+                    && upvalues1
+                        .iter()
+                        .zip(upvalues2.iter())
+                        .all(|(a, b)| Rc::ptr_eq(a, b))
+            }
+            _ => false,
         }
     }
 }
