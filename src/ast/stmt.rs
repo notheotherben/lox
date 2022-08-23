@@ -2,7 +2,7 @@ use crate::{lexer::Token, Loc};
 
 use super::*;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum FunType {
     Closure,
     Method,

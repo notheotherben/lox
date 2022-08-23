@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 use super::Function;
 
@@ -9,6 +9,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Function(Function),
+    Boxed(Box<Rc<Value>>)
 }
 
 impl Value {
@@ -29,6 +30,57 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Function(fun) => write!(f, "{}", fun),
+            Value::Boxed(value) => write!(f, "[{}]", value)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Upvalue {
+    Open(usize),
+    Closed(Rc<Value>)
+}
+
+impl PartialEq for Upvalue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Upvalue::Open(idx1), Upvalue::Open(idx2)) => idx1 == idx2,
+            (Upvalue::Closed(val1), Upvalue::Closed(val2)) => Rc::ptr_eq(val1, val2),
+            _ => false
+        }
+    }
+}
+
+impl Display for Upvalue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Upvalue::Open(..) => write!(f, "open upvalue"),
+            Upvalue::Closed(..) => write!(f, "closed upvalue")
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum VarRef {
+    Local(usize),
+    Transitive(usize),
+}
+
+impl PartialEq for VarRef {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (VarRef::Local(idx1), VarRef::Local(idx2)) => idx1 == idx2,
+            (VarRef::Transitive(idx1), VarRef::Transitive(idx2)) => idx1 == idx2,
+            _ => false,
+        }
+    }
+}
+
+impl Display for VarRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            VarRef::Local(_) => write!(f, "local"),
+            VarRef::Transitive(_) => write!(f, "upvalue"),
         }
     }
 }

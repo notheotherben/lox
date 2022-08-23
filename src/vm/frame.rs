@@ -2,30 +2,59 @@ use std::{rc::Rc, fmt::{Debug, Display}};
 
 use crate::Loc;
 
-use super::{Chunk, OpCode, Value};
+use super::{Chunk, OpCode, Value, value::Upvalue, Function, VarRef};
 
 #[derive(Clone)]
 pub struct Frame {
     pub name: Rc<String>,
     pub chunk: Rc<Chunk>,
+    pub upvalues: Vec<Upvalue>,
     pub stack_offset: usize,
     pub ip: usize,
 }
 
 impl Frame {
-    pub fn root(chunk: Chunk) -> Frame {
+    pub fn root_function(func: Function) -> Frame {
+        if let Function::OpenClosure { name, arity, upvalues, chunk } = func {
+            if arity != 0 {
+                panic!("Root frame must have zero arity.");
+            }
+
+            let upvalues = upvalues.iter().map(|upvalue| {
+                if let VarRef::Local(idx) = upvalue {
+                    Upvalue::Open(*idx)
+                } else {
+                    panic!("Attempted to construct a root frame with a non-local upvalue.")
+                }
+            }).collect();
+
+            Frame {
+                name,
+                chunk,
+                upvalues,
+                stack_offset: 0,
+                ip: 0,
+            }
+        } else {
+            panic!("Attempted to construct a root frame using an unsupported function type {}.", func);
+        }
+    }
+
+    pub fn root_chunk(chunk: Chunk) -> Frame {
         Frame {
             name: Rc::new(String::default()),
             chunk: Rc::new(chunk),
+            upvalues: Vec::new(),
             stack_offset: 0,
             ip: 0,
         }
     }
 
-    pub fn call(name: Rc<String>, chunk: Rc<Chunk>, stack_offset: usize) -> Self {
+    pub fn call(name: Rc<String>, upvalues: Vec<Upvalue>, chunk: Rc<Chunk>, stack_offset: usize) -> Self {
         Frame {
             name,
             chunk,
+            upvalues,
             stack_offset,
             ip: 0,
         }

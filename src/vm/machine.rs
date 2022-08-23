@@ -2,15 +2,15 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, time::SystemTime};
 
 use crate::{errors, Loc, LoxError};
 
-use super::{chunk::Chunk, ops::OpCode, value::Value, Frame, Function};
+use super::{chunk::Chunk, ops::OpCode, value::Value, value::{VarRef, Upvalue}, Frame, Function};
 
 pub struct VM {
     debug: bool,
     output: Box<dyn std::io::Write>,
 
-    stack: Vec<Value>,
+    stack: Vec<Rc<Value>>,
 
-    globals: HashMap<String, Value>,
+    globals: HashMap<String, Rc<Value>>,
     frames: Vec<Frame>,
 }
 
@@ -22,7 +22,7 @@ macro_rules! op_binary {
 
             #[allow(unused_parens)]
             let result = $op;
-            $self.push(Value::$res(result))
+            $self.push(Rc::new(Value::$res(result)))
         }
     };
 
@@ -32,11 +32,11 @@ macro_rules! op_binary {
             let left = $self.pop()?;
 
             #[allow(unused_parens)]
-            match (left, right) {
+            match (left.as_ref(), right.as_ref()) {
                 $(
                     (Value::$src($left), Value::$src($right)) => {
                         let result = $op;
-                        $self.push(Value::$res(result))
+                        $self.push(Rc::new(Value::$res(result)))
                     }
                 )+
                 (left, right) => return Err(errors::runtime(
@@ -50,8 +50,14 @@ macro_rules! op_binary {
 }
 
 impl VM {
+    pub fn call(&mut self, func: Function) -> Result<(), LoxError> {
+        self.frames.push(Frame::root_function(func));
+
+        self.run()
+    }
+
     pub fn interpret(&mut self, chunk: Chunk) -> Result<(), LoxError> {
-        self.frames.push(Frame::root(chunk));
+        self.frames.push(Frame::root_chunk(chunk));
 
         self.run()
     }
@@ -67,7 +73,7 @@ impl VM {
         }
     }
 
-    pub fn with_native<N: Into<String>, F: Fn(&[Value]) -> Result<Value, LoxError> + 'static>(
+    pub fn with_native<N: Into<String>, F: Fn(&[Rc<Value>]) -> Result<Value, LoxError> + 'static>(
         mut self,
         name: N,
         arity: usize,
@@ -76,13 +82,13 @@ impl VM {
         let name = name.into();
         self.globals.insert(
             name.clone(),
-            Value::Function(Function::native(name, arity, move |vm| {
+            Rc::new(Value::Function(Function::native(name, arity, move |vm| {
                 let frame = vm.frame().ok_or_else(|| errors::runtime(Loc::Native, 
                     "No active frame on the virtual machine call stack.",
                     "Report this issue to us on GitHub with example code to reproduce the problem."))?;
                 
                 fun(&vm.stack[frame.stack_offset + 1..])
-            })),
+            }))),
         );
         self
     }
@@ -94,11 +100,11 @@ impl VM {
     fn run(&mut self) -> Result<(), LoxError> {
         while let Some(frame) = self.frame() {
             if let Some(&instruction) = frame.opcode() {
-                self.frames.last_mut().unwrap().ip += 1;
-
                 if self.debug {
                     println!("{:?}", self);
                 }
+
+                self.frames.last_mut().unwrap().ip += 1;
 
                 match self.step(frame, instruction) {
                     Ok(true) => (),
@@ -143,18 +149,18 @@ impl VM {
 
     fn step(&mut self, frame: Frame, instruction: OpCode) -> Result<bool, LoxError> {
         match instruction {
-            OpCode::Nil => self.stack.push(Value::Nil),
-            OpCode::True => self.stack.push(Value::Bool(true)),
-            OpCode::False => self.stack.push(Value::Bool(false)),
+            OpCode::Nil => self.stack.push(Rc::new(Value::Nil)),
+            OpCode::True => self.stack.push(Rc::new(Value::Bool(true))),
+            OpCode::False => self.stack.push(Rc::new(Value::Bool(false))),
             OpCode::Constant(idx) => {
                 if let Some(value) = frame.constant(idx) {
-                    self.stack.push(value.clone());
+                    self.stack.push(Rc::new(value.clone()));
                 } else {
                     return Err(errors::runtime(
-                    frame.last_location(),
-                    "Invalid constant index in byte code.",
-                    "Make sure that you are passing valid constant indices to the virtual machine."
-                ));
+                        frame.last_location(),
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ));
                 }
             }
 
@@ -205,10 +211,62 @@ impl VM {
                 }
             }
 
+            OpCode::GetUpvalue(idx) => {
+                if let Some(upvalue) = frame.upvalues.get(idx) {
+                    match upvalue {
+                        Upvalue::Open(idx) => {
+                            let value = self.stack[*idx].clone();
+                            self.stack.push(value);
+                        }
+                        Upvalue::Closed(value) => {
+                            if let Value::Boxed(value) = value.clone().as_ref() {
+                                self.stack.push(Rc::clone(value));
+                            } else {
+                                return Err(errors::runtime(
+                                    frame.last_location(),
+                                    "Closed upvalue entry does not contain a reference to a boxed value.",
+                                    "Please report this issue to us on GitHub with example code."
+                                ));
+                            }
+                        }
+                    }
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Invalid upvalue index in byte code.",
+                        "Make sure that you are passing valid upvalue indices to the virtual machine."
+                    ));
+                }
+            },
+            OpCode::SetUpvalue(idx) => {
+                let value = self.pop()?;
+
+                if let Some(upvalue) = frame.upvalues.get(idx) {
+                    match upvalue {
+                        Upvalue::Open(idx) => {
+                            self.stack[*idx] = value;
+                        }
+                        Upvalue::Closed(closure) => {
+                            let mut closure = closure.clone();
+                            if let Value::Boxed(target) = unsafe { Rc::get_mut_unchecked(&mut closure) } {
+                                *target.as_mut() = value;
+                            } else {
+
+                            }
+                        }
+                    }
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Invalid upvalue index in byte code.",
+                        "Make sure that you are passing valid upvalue indices to the virtual machine."
+                    ));
+                }
+            },
+
             OpCode::GetLocal(idx) => {
                 if let Some(value) = self.stack.get(
-                    self.frames
-                        .last()
+                    self.frame()
                         .map(|f| f.stack_offset)
                         .unwrap_or_default()
                         + idx,
@@ -256,8 +314,8 @@ impl VM {
                 op_binary!(self(frame, left, right), Number: (left / right) => Number)
             }
 
-            OpCode::Negate => match self.pop()? {
-                Value::Number(n) => self.stack.push(Value::Number(-n)),
+            OpCode::Negate => match self.pop()?.as_ref() {
+                Value::Number(n) => self.stack.push(Rc::new(Value::Number(-n))),
                 _ => {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -268,7 +326,7 @@ impl VM {
             },
             OpCode::Not => {
                 let value = self.pop()?;
-                self.push(Value::Bool(!value.is_truthy()));
+                self.push(Rc::new(Value::Bool(!value.is_truthy())));
             }
 
             OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
@@ -277,36 +335,12 @@ impl VM {
 
             OpCode::Pop => {
                 self.pop()?;
-            }
+            },
             OpCode::Print => {
                 let value = self.pop()?;
                 writeln!(self.output, "{}", value)?;
-            }
-
-            OpCode::Closure(idx) => {
-                match frame.constant(idx) {
-                    Some(Value::Function(Function::Closure { name, arity, chunk, .. })) => {
-                        self.push(Value::Function(Function::Closure { name: name.clone(), arity: *arity, chunk: chunk.clone(), upvalues: vec![] }));
-                    },
-                    Some(val@Value::Function(Function::Native { .. })) => {
-                        self.push(val.clone());
-                    },
-                    Some(_) => {
-                        return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine.",
-                        ))
-                    },
-                    None => {
-                        return Err(errors::runtime(
-                            frame.last_location(),
-                            "Invalid constant index in byte code.",
-                            "Make sure that you are passing valid constant indices to the virtual machine.",
-                        ))
-                    }
-                }
             },
+
             OpCode::Call(call_arity) => {
                 if self.frames.len() >= 1000 {
                     return Err(errors::runtime(
@@ -316,48 +350,104 @@ impl VM {
                     ));
                 }
 
-                match self.stack.get(self.stack.len() - call_arity - 2) {
-                    Some(Value::Function(Function::Closure{name, chunk, arity, ..})) => {
-                        if *arity != call_arity {
+                if let Some(value) = self.stack.get(self.stack.len() - call_arity - 2) {
+                    match value.as_ref() {
+                        Value::Function(Function::ClosedClosure{name, chunk, upvalues, arity, ..}) => {
+                            if *arity != call_arity {
+                                return Err(errors::runtime(
+                                    frame.last_location(),
+                                    format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
+                                    "Make sure that you are passing the correct number of arguments to the function."
+                                ));
+                            }
+
+                            let new_frame = Frame::call(name.clone(), upvalues.clone(), chunk.clone(), self.stack.len() - arity - 1);
+                            self.frames.push(new_frame);
+                        },
+                        Value::Function(Function::Native { name, arity, fun }) => {
+                            if *arity != call_arity {
+                                return Err(errors::runtime(
+                                    frame.last_location(),
+                                    format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
+                                    "Make sure that you are passing the correct number of arguments to the function."
+                                ));
+                            }
+
+                            let fun = fun.clone();
+
+                            let stack_top = self.stack.len() - arity - 1;
+                            let new_frame = Frame::call(name.clone(), Vec::new(), Rc::new(Chunk::default()), stack_top);
+                            self.frames.push(new_frame);
+                            let result = fun(self)?;
+                            self.frames.pop();
+                            self.stack.truncate(stack_top);
+                            self.push(Rc::new(result));
+                        },
+                        Value::Function(Function::OpenClosure { name, .. }) => {
                             return Err(errors::runtime(
                                 frame.last_location(),
-                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
-                                "Make sure that you are passing the correct number of arguments to the function."
-                            ));
+                                format!("The function '{}' has not been converted into a closure due to a bug in the compiler.", name),
+                                "Report this issue to us on GitHub with example code."))
                         }
-
-                        let new_frame = Frame::call(name.clone(), chunk.clone(), self.stack.len() - arity - 1);
-                        self.frames.push(new_frame);
-                    },
-                    Some(Value::Function(Function::Native { name, arity, fun })) => {
-                        if *arity != call_arity {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
-                                "Make sure that you are passing the correct number of arguments to the function."
-                            ));
+                        target => return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Unsupported calling target {:?}", target),
+                            "Make sure that you are calling a valid function or class constructor."))
                         }
-
-                        let fun = fun.clone();
-
-                        let stack_top = self.stack.len() - arity - 1;
-                        let new_frame = Frame::call(name.clone(), Rc::new(Chunk::default()), stack_top);
-                        self.frames.push(new_frame);
-                        let result = fun(self)?;
-                        self.frames.pop();
-                        self.stack.truncate(stack_top);
-                        self.push(result);
-                    },
-                    Some(target) => Err(errors::runtime(
+                } else {
+                    return Err(errors::runtime(
+                    frame.last_location(),
+                    "Callee could not be retrieved from the stack based on the known calling convention.",
+                    "Please report this issue to us on GitHub with example code."))
+                }
+            },
+            OpCode::Closure(idx) => {
+                let value = if let Some(value) = frame.constant(idx) {
+                    value
+                } else {
+                    return Err(errors::runtime(
                         frame.last_location(),
-                        format!("Unsupported calling target {:?}", target),
-                        "Make sure that you are calling a valid function or class constructor."))?,
-                    None => Err(errors::runtime(
-                        frame.last_location(),
-                        "Callee could not be retrieved from the stack based on the known calling convention.",
-                        "Please report this issue to us on GitHub with example code."))?,
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ));
                 };
-            }
+
+                match value {
+                    Value::Function(fun) => {
+                        let closure = fun.capture(|ups| {
+                            let mut upvalues = Vec::with_capacity(ups.len());
+                            for upvalue in ups {
+                                match upvalue {
+                                    VarRef::Local(idx) => {
+                                        let value = self.stack.get(self.frame()
+                                            .map(|f| f.stack_offset)
+                                            .unwrap_or_default() + *idx)
+                                            .ok_or_else(|| errors::runtime(
+                                                frame.last_location(),
+                                                "Attempted to access local upvalue at a stack index which is invalid.",
+                                                "Please report this issue to us on GitHub with example code."))?.clone();
+                                        let closed = Rc::new(Value::Boxed(Box::new(value)));
+                                        let upvalue = Upvalue::Closed(closed.clone());
+                                        self.stack[*idx] = closed;
+                                        upvalues.push(upvalue);
+                                    },
+                                    VarRef::Transitive(idx) => 
+                                        upvalues.push(frame.upvalues[*idx].clone()),
+                                }
+                            }
+
+                            Ok(upvalues)
+                        })?;
+                        self.push(Rc::new(Value::Function(closure)));
+                    },
+                    _ => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            "Attempted to construct a closure over a non-function value. This likely indicates that invalid byte-code is being executed.",
+                            "Please report this issue to us on GitHub with example code."))
+                    }
+                }
+            },
             OpCode::Return => {
                 let result = self.pop()?;
                 self.stack.truncate(frame.stack_offset);
@@ -367,7 +457,7 @@ impl VM {
                 }
 
                 self.push(result);
-            }
+            },
 
             OpCode::Jump(ip) => {
                 self.jump(ip);
@@ -389,11 +479,11 @@ impl VM {
         Ok(true)
     }
 
-    fn push(&mut self, value: Value) {
+    fn push(&mut self, value: Rc<Value>) {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Result<Value, LoxError> {
+    fn pop(&mut self) -> Result<Rc<Value>, LoxError> {
         if let Some(value) = self.stack.pop() {
             Ok(value)
         } else {
@@ -407,7 +497,7 @@ impl VM {
         }
     }
 
-    fn peek(&self) -> Result<Value, LoxError> {
+    fn peek(&self) -> Result<Rc<Value>, LoxError> {
         if let Some(value) = self.stack.last() {
             Ok(value.clone())
         } else {
@@ -438,10 +528,7 @@ impl Debug for VM {
 
         write!(f, "Locals:")?;
         for value in self.stack.iter().skip(
-            self.frames
-                .last()
-                .map(|f| f.stack_offset)
-                .unwrap_or_default(),
+            self.frame().map(|f| f.stack_offset).unwrap_or_default()
         ) {
             write!(f, "[{}] ", value)?;
         }

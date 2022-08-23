@@ -316,7 +316,7 @@ impl StmtVisitor<Vec<LoxError>> for VariableAnalyzer {
                     "You cannot return a value within a class initializer.",
                 )]
             },
-            FunctionType::None => return vec![errors::language(
+            FunctionType::None => vec![errors::language(
                 token.location(),
                 "Return statement used outside of a function.",
                 "You can only use the `return` keyword within a function.",

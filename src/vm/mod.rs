@@ -12,4 +12,4 @@ pub use frame::Frame;
 pub use machine::VM;
 pub use ops::OpCode;
 pub use stack::Stack;
-pub use value::Value;
+pub use value::{Value, VarRef};

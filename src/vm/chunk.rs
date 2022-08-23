@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::core::Loc;
 
-use super::{ops::OpCode, value::Value};
+use super::{ops::OpCode, value::Value, VarRef, Function};
 
 #[derive(Debug, Clone, Default)]
 pub struct Chunk {
@@ -72,11 +72,12 @@ impl Chunk {
 
             match instruction {
                 OpCode::Constant(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
-                OpCode::DefineGlobal(idx) => {
-                    writeln!(f, "{} {}", instruction, self.constants[*idx])
-                }
+                OpCode::DefineGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::GetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::SetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+
+                OpCode::GetUpvalue(idx) => writeln!(f, "{} {}", instruction, *idx),
+                OpCode::SetUpvalue(idx) => writeln!(f, "{} {}", instruction, *idx),
 
                 OpCode::GetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
                 OpCode::SetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
@@ -85,13 +86,32 @@ impl Chunk {
                 OpCode::JumpIf(ip) => writeln!(f, "{} {}", instruction, ip),
                 OpCode::JumpIfFalse(ip) => writeln!(f, "{} {}", instruction, ip),
 
-                OpCode::Closure(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
                 OpCode::Call(arity) => writeln!(f, "{} {}", instruction, arity),
+                OpCode::Closure(idx) => {
+                    if let Value::Function(Function::OpenClosure { name, upvalues, .. }) = &self.constants[*idx] {
+                        writeln!(f, "{} <fn {}>", instruction, name)?;
+
+                        for upvalue in upvalues.iter() {
+                            match upvalue {
+                                VarRef::Local(idx) => {
+                                    writeln!(f, "          |            local {}", idx)?;
+                                }
+                                VarRef::Transitive(idx) => {
+                                    writeln!(f, "          |            upvalue {}", idx)?;
+                                }
+                            }
+                        }
+                    } else {
+                        writeln!(f, "{} {}", instruction, self.constants[*idx])?;
+                    }
+
+                    Ok(())
+                },
 
                 op => writeln!(f, "{}", op),
             }
         } else {
-            writeln!(f, "INVALID_LOCATION")
+            writeln!(f, "END")
         }
     }
 }
@@ -100,6 +120,14 @@ impl Display for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for (i, _) in self.code.iter().enumerate() {
             self.disassemble(i, f)?;
+        }
+
+        for constant in self.constants.iter() {
+            if let Value::Function(Function::OpenClosure { name, chunk, .. }) = constant {
+                writeln!(f, "\n--------- START {} ---------", name)?;
+                writeln!(f, "{}", chunk)?;
+                writeln!(f, "---------  END {}  ---------\n", name)?;
+            }
         }
 
         Ok(())

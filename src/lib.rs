@@ -1,3 +1,5 @@
+#![feature(arc_unwrap_or_clone, get_mut_unchecked)]
+
 mod core;
 pub mod ast;
 pub mod analysis;

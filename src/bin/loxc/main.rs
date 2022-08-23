@@ -70,5 +70,5 @@ fn run(source: &str, vm: &mut VM) -> Result<(), LoxError> {
     }
 
     let chunk = lox::compiler::compile(&stmts)?;
-    vm.interpret(chunk)
+    vm.call(chunk)
 }

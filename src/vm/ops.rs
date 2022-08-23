@@ -12,6 +12,9 @@ pub enum OpCode {
     GetGlobal(usize),
     SetGlobal(usize),
 
+    GetUpvalue(usize),
+    SetUpvalue(usize),
+
     GetLocal(usize),
     SetLocal(usize),
     
@@ -31,9 +34,8 @@ pub enum OpCode {
     Print,
 
     Call(usize),
-    Return,
-
     Closure(usize),
+    Return,
 
     Jump(usize),
     JumpIf(usize),
@@ -51,6 +53,9 @@ impl Display for OpCode {
             OpCode::DefineGlobal(..) => write!(f, "OP_DEFINE_GLOBAL"),
             OpCode::GetGlobal(..) => write!(f, "OP_GET_GLOBAL"),
             OpCode::SetGlobal(..) => write!(f, "OP_SET_GLOBAL"),
+
+            OpCode::GetUpvalue(..) => write!(f, "OP_GET_UPVALUE"),
+            OpCode::SetUpvalue(..) => write!(f, "OP_SET_UPVALUE"),
 
             OpCode::GetLocal(..) => write!(f, "OP_GET_LOCAL"),
             OpCode::SetLocal(..) => write!(f, "OP_SET_LOCAL"),
@@ -71,9 +76,8 @@ impl Display for OpCode {
             OpCode::Print => write!(f, "OP_PRINT"),
 
             OpCode::Call(..) => write!(f, "OP_CALL"),
-            OpCode::Return => write!(f, "OP_RETURN"),
-
             OpCode::Closure(..) => write!(f, "OP_CLOSURE"),
+            OpCode::Return => write!(f, "OP_RETURN"),
 
             OpCode::Jump(..) => write!(f, "OP_JUMP"),
             OpCode::JumpIf(..) => write!(f, "OP_JUMP_IF"),
