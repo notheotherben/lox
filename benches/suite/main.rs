@@ -51,7 +51,7 @@ fn run_file_loxc(b: &mut Bencher, path: &str) -> Result<(), LoxError> {
 
     let chunk = lox::compiler::compile(&stmts).expect("no errors");
 
-    b.iter(move || lox::vm::VM::default().interpret(chunk.clone()).expect("no errors"));
+    b.iter(move || lox::vm::VM::default().call(chunk.clone()).expect("no errors"));
     Ok(())
 }
 
