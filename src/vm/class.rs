@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, fmt::Display};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Class {
@@ -10,5 +10,22 @@ impl Class {
         Class {
             name: Rc::new(name.into()),
         }
+    }
+}
+
+impl Display for Class {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub struct Instance {
+    pub class: Rc<Class>,
+}
+
+impl Display for Instance {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} instance", self.class)
     }
 }

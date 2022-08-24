@@ -8,7 +8,7 @@ mod stack;
 mod value;
 
 pub use chunk::Chunk;
-pub use class::Class;
+pub use class::{Class, Instance};
 pub use fun::Function;
 pub use frame::Frame;
 pub use machine::VM;

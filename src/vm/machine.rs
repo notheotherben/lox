@@ -474,7 +474,7 @@ impl VM {
                 ))?;
 
                 if let Value::String(name) = name {
-                    self.push(Rc::new(Value::Class(Class::new(name))));
+                    self.push(Rc::new(Value::Class(Rc::new(Class::new(name)))));
                 } else {
                     return Err(errors::runtime(
                         frame.last_location(),
