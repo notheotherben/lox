@@ -1,6 +1,6 @@
 use std::{fmt::Display, rc::Rc};
 
-use super::Function;
+use super::{Function, Class};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
@@ -9,6 +9,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Function(Function),
+    Class(Class),
 }
 
 impl Value {
@@ -29,6 +30,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Function(fun) => write!(f, "{}", fun),
+            Value::Class(cls) => write!(f, "{}", cls.name),
         }
     }
 }

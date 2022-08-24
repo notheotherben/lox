@@ -2,7 +2,7 @@ use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTi
 
 use crate::{errors, Loc, LoxError};
 
-use super::{chunk::Chunk, ops::OpCode, value::Value, value::{VarRef, Upvalue}, Frame, Function};
+use super::{chunk::Chunk, ops::OpCode, value::Value, value::{VarRef, Upvalue}, Frame, Function, Class};
 
 pub struct VM {
     debug: bool,
@@ -464,6 +464,24 @@ impl VM {
                 }
 
                 self.push(result);
+            },
+
+            OpCode::Class(name) => {
+                let name = frame.constant(name).ok_or_else(|| errors::runtime(
+                    frame.last_location(),
+                    "Could not retrieve class name from the constant pool.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ))?;
+
+                if let Value::String(name) = name {
+                    self.push(Rc::new(Value::Class(Class::new(name))));
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        format!("Received an invalid class name '{}' when a string was expected.", name),
+                        "Please report this issue on GitHub with example code reproducing the issue."
+                    ));
+                }
             },
 
             OpCode::Jump(ip) => {

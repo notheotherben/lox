@@ -361,12 +361,17 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
     fn visit_class(
         &mut self,
-        _name: &Token,
+        name: &Token,
         _superclass: Option<&Expr>,
         _statics: &[Stmt],
         _methods: &[Stmt],
     ) -> Result<(), LoxError> {
-        todo!()
+        let name_const = self.identifier(name.lexeme());
+        self.define_local(name);
+
+        self.chunk_mut().write(OpCode::Class(name_const), name.location());
+
+        Ok(())
     }
 
     fn visit_expr_stmt(&mut self, expr: &Expr) -> Result<(), LoxError> {
@@ -768,5 +773,13 @@ Make sure that you are passing the correct number of arguments to the function.
         print c1();
         print c2();
         "# => "1\n2\n3\n1\n4\n2")
+    }
+
+    #[test]
+    fn classes() {
+        run!(r#"
+        class Brioche {}
+        print Brioche;
+        "# => "Brioche");
     }
 }
