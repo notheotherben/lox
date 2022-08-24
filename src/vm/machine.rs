@@ -242,15 +242,8 @@ impl VM {
                         }
                         Upvalue::Closed(closure) => {
                             let mut closure = closure.clone();
-                            if let Value::Boxed(target) = unsafe { Rc::get_mut_unchecked(&mut closure) } {
-                                *target.as_mut() = value;
-                            } else {
-                                return Err(errors::runtime(
-                                    frame.last_location(),
-                                    "Attempted to assign to a closed upvalue which was not boxed.",
-                                    "Report this issue to us on GitHub with example code to reproduce the problem."
-                                ));
-                            }
+                            let target = unsafe { Rc::get_mut_unchecked(&mut closure) };
+                            *target = Rc::unwrap_or_clone(value);
                         }
                     }
                 } else {
@@ -295,12 +288,8 @@ impl VM {
                     ));
                 }
 
-                match unsafe{ Rc::get_mut_unchecked(self.stack.get_unchecked_mut(idx)) } {
-                    Value::Boxed(target) => {
-                        *target.as_mut() = value;
-                    },
-                    _ => self.stack[idx] = value
-                };
+                let target = unsafe{ Rc::get_mut_unchecked(self.stack.get_unchecked_mut(idx)) };
+                *target = Rc::unwrap_or_clone(value);
             }
 
             OpCode::Add => op_binary!(
@@ -544,10 +533,8 @@ impl VM {
                         format!("Attempted to access local upvalue at a locals index {} which is invalid.", *idx),
                         "Please report this issue to us on GitHub with example code."))?.clone();
 
-                let boxed_value = Rc::new(Value::Boxed(Box::new(value)));
-                self.stack[*idx] = boxed_value.clone();
-
-                let closed = Upvalue::Closed(boxed_value);
+                self.stack[*idx] = value.clone();
+                let closed = Upvalue::Closed(value);
                 let target = unsafe { Rc::get_mut_unchecked(&mut upvalue) };
                 *target = closed;
             }

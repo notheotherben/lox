@@ -9,7 +9,6 @@ pub enum Value {
     Number(f64),
     String(String),
     Function(Function),
-    Boxed(Box<Rc<Value>>),
 }
 
 impl Value {
@@ -30,7 +29,6 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Function(fun) => write!(f, "{}", fun),
-            Value::Boxed(boxed) => write!(f, "{}", boxed),
         }
     }
 }
@@ -38,7 +36,7 @@ impl Display for Value {
 #[derive(Debug, Clone)]
 pub enum Upvalue {
     Open(usize),
-    Closed(Rc<Value>)
+    Closed(Rc<Value>),
 }
 
 impl PartialEq for Upvalue {

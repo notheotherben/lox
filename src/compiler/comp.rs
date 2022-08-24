@@ -747,5 +747,26 @@ Make sure that you are passing the correct number of arguments to the function.
         globalSet();
         globalGet();
         "# => "updated");
+
+        run!(r#"
+        fun makeCounter() {
+            var count = 0;
+
+            return fun () {
+                count = count + 1;
+                return count;
+            };
+        }
+
+        var c1 = makeCounter();
+        var c2 = makeCounter();
+
+        print c1();
+        print c1();
+        print c1();
+        print c2();
+        print c1();
+        print c2();
+        "# => "1\n2\n3\n1\n4\n2")
     }
 }
