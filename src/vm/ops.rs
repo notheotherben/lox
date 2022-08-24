@@ -35,6 +35,7 @@ pub enum OpCode {
 
     Call(usize),
     Closure(usize),
+    CloseUpvalue,
     Return,
 
     Jump(usize),
@@ -77,6 +78,7 @@ impl Display for OpCode {
 
             OpCode::Call(..) => write!(f, "OP_CALL"),
             OpCode::Closure(..) => write!(f, "OP_CLOSURE"),
+            OpCode::CloseUpvalue => write!(f, "OP_CLOSE_UPVALUE"),
             OpCode::Return => write!(f, "OP_RETURN"),
 
             OpCode::Jump(..) => write!(f, "OP_JUMP"),

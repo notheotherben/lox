@@ -24,7 +24,7 @@ pub enum Function {
     ClosedClosure {
         name: Rc<String>,
         arity: usize,
-        upvalues: Vec<Upvalue>,
+        upvalues: Vec<Rc<Upvalue>>,
         chunk: Rc<Chunk>,
     },
 }
@@ -39,7 +39,7 @@ impl Function {
         }
     }
 
-    pub fn capture<C: FnMut(&Vec<VarRef>) -> Result<Vec<Upvalue>, LoxError>>(&self, mut capture: C) -> Result<Self, LoxError> {
+    pub fn capture<C: FnMut(&Vec<VarRef>) -> Result<Vec<Rc<Upvalue>>, LoxError>>(&self, mut capture: C) -> Result<Self, LoxError> {
         match self {
             Function::OpenClosure { name, arity, upvalues, chunk } => Ok(Function::ClosedClosure {
                 name: name.clone(),

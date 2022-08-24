@@ -8,7 +8,7 @@ use super::{Chunk, OpCode, Value, value::Upvalue, Function, VarRef};
 pub struct Frame {
     pub name: Rc<String>,
     pub chunk: Rc<Chunk>,
-    pub upvalues: Vec<Upvalue>,
+    pub upvalues: Vec<Rc<Upvalue>>,
     pub stack_offset: usize,
     pub ip: usize,
 }
@@ -22,7 +22,7 @@ impl Frame {
 
             let upvalues = upvalues.iter().map(|upvalue| {
                 if let VarRef::Local(idx) = upvalue {
-                    Upvalue::Open(*idx)
+                    Rc::new(Upvalue::Open(*idx))
                 } else {
                     panic!("Attempted to construct a root frame with a non-local upvalue.")
                 }
@@ -50,7 +50,7 @@ impl Frame {
         }
     }
 
-    pub fn call(name: Rc<String>, upvalues: Vec<Upvalue>, chunk: Rc<Chunk>, stack_offset: usize) -> Self {
+    pub fn call(name: Rc<String>, upvalues: Vec<Rc<Upvalue>>, chunk: Rc<Chunk>, stack_offset: usize) -> Self {
         Frame {
             name,
             chunk,

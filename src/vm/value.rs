@@ -9,7 +9,7 @@ pub enum Value {
     Number(f64),
     String(String),
     Function(Function),
-    Boxed(Box<Rc<Value>>)
+    Boxed(Box<Rc<Value>>),
 }
 
 impl Value {
@@ -30,7 +30,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Function(fun) => write!(f, "{}", fun),
-            Value::Boxed(value) => write!(f, "[{}]", value)
+            Value::Boxed(boxed) => write!(f, "{}", boxed),
         }
     }
 }
@@ -54,8 +54,8 @@ impl PartialEq for Upvalue {
 impl Display for Upvalue {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Upvalue::Open(..) => write!(f, "open upvalue"),
-            Upvalue::Closed(..) => write!(f, "closed upvalue")
+            Upvalue::Open(idx) => write!(f, "open upvalue {}", *idx),
+            Upvalue::Closed(value) => write!(f, "closed upvalue [{}]", value)
         }
     }
 }

@@ -8,13 +8,18 @@ use crate::{
     Loc, LoxError,
 };
 
+struct Local {
+    pub token: Token,
+    pub captured: bool,
+}
+
 #[derive(Default)]
 struct CompilerState {
     pub chunk: Chunk,
     
     pub identifiers: HashMap<String, usize>,
 
-    pub locals: Vec<Token>,
+    pub locals: Vec<Local>,
     pub upvalues: Vec<VarRef>,
     pub stack_depth: usize,
 
@@ -74,7 +79,10 @@ impl Compiler {
     }
 
     fn define_local(&mut self, name: &Token) {
-        self.state_mut().locals.push(name.clone());
+        self.state_mut().locals.push(Local{
+            token: name.clone(),
+            captured: false,
+        });
     }
 
     fn add_upvalue(&mut self, up: VarRef, offset: usize) -> usize {
@@ -96,7 +104,7 @@ impl Compiler {
         }
 
         for (idx, local) in self.state_offset(offset).locals.iter().enumerate().rev() {
-            if local.lexeme() == token.lexeme() {
+            if local.token.lexeme() == token.lexeme() {
                 return Some(idx);
             }
         }
@@ -105,12 +113,13 @@ impl Compiler {
     }
 
     fn get_upvalue(&mut self, token: &Token, offset: usize) -> Option<usize> {
-        if offset >= self.states.len() {
+        if offset + 1 >= self.states.len() {
             return None;
         }
 
         for (idx, local) in self.state_offset(offset + 1).locals.iter().enumerate().rev() {
-            if local.lexeme() == token.lexeme() {
+            if local.token.lexeme() == token.lexeme() {
+                self.state_offset(offset + 1).locals[idx].captured = true;
                 return Some(self.add_upvalue(VarRef::Local(idx), offset));
             }
         }
@@ -125,6 +134,8 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
         if let Some(idx) = self.get_local(ident, 0) {
             self.chunk_mut().write(OpCode::SetLocal(idx), ident.location());
+        } else if let Some(idx) = self.get_upvalue(ident, 0) {
+            self.chunk_mut().write(OpCode::SetUpvalue(idx), ident.location());
         } else {
             let idx = self.identifier(ident.lexeme());
             self.chunk_mut().write(OpCode::SetGlobal(idx), ident.location());
@@ -199,8 +210,6 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         }
 
         self.visit_block(body)?;
-
-        self.chunk_mut().write(OpCode::Return, Loc::Unknown);
 
         let comp = self.states.pop().unwrap();
 
@@ -335,8 +344,17 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
             self.visit_stmt(stmt)?;
         }
 
-        self.state_mut().locals.truncate(parent_locals_len);
         self.state_mut().stack_depth -= 1;
+
+        let state = self.state_mut();
+        while state.locals.len() > parent_locals_len {
+            let local = state.locals.pop().unwrap();
+            if local.captured {
+                state.chunk.write(OpCode::CloseUpvalue, Loc::Unknown);
+            } else {
+                state.chunk.write(OpCode::Pop, Loc::Unknown);
+            }
+        }
 
         Ok(())
     }
@@ -366,15 +384,11 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     ) -> Result<(), LoxError> {
         self.states.push(CompilerState::default());
 
-        self.define_local(&Token::This(name.location()));
-
         for param in params {
             self.define_local(param);
         }
 
         self.visit_block(body)?;
-
-        self.chunk_mut().write(OpCode::Return, Loc::Unknown);
 
         let comp = self.states.pop().unwrap();
 
@@ -536,7 +550,7 @@ mod tests {
             let _output = Box::new(CaptureOutput::default());
             let err = VM::default()
                 .with_output(_output.clone())
-                .with_debug()
+                //.with_debug()
                 .call(chunk)
                 .expect_err("expected error");
             assert_eq!(format!("{}", err), format!("{}", $val).trim());
@@ -636,6 +650,7 @@ mod tests {
         run!("var foo = fun () { print 1; }; print foo;" => "<fn anonymous@'fun' at line 1>");
         run!("fun foo() { print 1; } foo();" => 1);
         run!("fun foo() { print 1; } foo(); foo();" => "1\n1");
+        run!("fun foo() { return 1; } print foo();" => 1);
         run!("print clock() > 0;" => true);
         run!(err: "assert(false, \"should fail\");" => "Assertion failed: should fail\n\n  [line 0] in assert()\n  [line 1] in script");
     }
@@ -699,5 +714,38 @@ Make sure that you are passing the correct number of arguments to the function.
         "# => "return from outer\n\
         create inner closure\n\
         value");
+
+        run!(r#"
+        fun outer() {
+            var x = "outside";
+            fun inner() {
+              print x;
+            }
+          
+            return inner;
+          }
+          
+          var closure = outer();
+          closure();
+        "# => "outside");
+
+        run!(r#"
+        var globalSet;
+        var globalGet;
+        
+        fun main() {
+          var a = "initial";
+        
+          fun set() { a = "updated"; }
+          fun get() { print a; }
+        
+          globalSet = set;
+          globalGet = get;
+        }
+        
+        main();
+        globalSet();
+        globalGet();
+        "# => "updated");
     }
 }

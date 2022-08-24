@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, rc::Rc, time::SystemTime};
+use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTime};
 
 use crate::{errors, Loc, LoxError};
 
@@ -9,6 +9,7 @@ pub struct VM {
     output: Box<dyn std::io::Write>,
 
     stack: Vec<Rc<Value>>,
+    open_upvalues: LinkedList<Rc<Upvalue>>,
 
     globals: HashMap<String, Rc<Value>>,
     frames: Vec<Frame>,
@@ -132,6 +133,7 @@ impl VM {
                     Err(err) => return Err(err),
                 }
             } else {
+                self.close_upvalues(frame.stack_offset)?;
                 self.stack.truncate(frame.stack_offset);
                 self.frames.pop();
             }
@@ -213,21 +215,13 @@ impl VM {
 
             OpCode::GetUpvalue(idx) => {
                 if let Some(upvalue) = frame.upvalues.get(idx) {
-                    match upvalue {
+                    match upvalue.as_ref() {
                         Upvalue::Open(idx) => {
                             let value = self.stack[*idx].clone();
                             self.stack.push(value);
                         }
                         Upvalue::Closed(value) => {
-                            if let Value::Boxed(value) = value.clone().as_ref() {
-                                self.stack.push(Rc::clone(value));
-                            } else {
-                                return Err(errors::runtime(
-                                    frame.last_location(),
-                                    "Closed upvalue entry does not contain a reference to a boxed value.",
-                                    "Please report this issue to us on GitHub with example code."
-                                ));
-                            }
+                            self.stack.push(Rc::clone(value));
                         }
                     }
                 } else {
@@ -242,7 +236,7 @@ impl VM {
                 let value = self.pop()?;
 
                 if let Some(upvalue) = frame.upvalues.get(idx) {
-                    match upvalue {
+                    match upvalue.as_ref() {
                         Upvalue::Open(idx) => {
                             self.stack[*idx] = value;
                         }
@@ -251,7 +245,11 @@ impl VM {
                             if let Value::Boxed(target) = unsafe { Rc::get_mut_unchecked(&mut closure) } {
                                 *target.as_mut() = value;
                             } else {
-
+                                return Err(errors::runtime(
+                                    frame.last_location(),
+                                    "Attempted to assign to a closed upvalue which was not boxed.",
+                                    "Report this issue to us on GitHub with example code to reproduce the problem."
+                                ));
                             }
                         }
                     }
@@ -291,13 +289,18 @@ impl VM {
 
                 if idx >= self.stack.len() {
                     return Err(errors::runtime(
-                    frame.last_location(),
-                    "Invalid stack index in byte code for local assignment.",
-                    "Make sure that you are passing valid stack indices to the virtual machine."
-                ));
+                        frame.last_location(),
+                        "Invalid stack index in byte code for local assignment.",
+                        "Make sure that you are passing valid stack indices to the virtual machine."
+                    ));
                 }
 
-                self.stack[idx] = value;
+                match unsafe{ Rc::get_mut_unchecked(self.stack.get_unchecked_mut(idx)) } {
+                    Value::Boxed(target) => {
+                        *target.as_mut() = value;
+                    },
+                    _ => self.stack[idx] = value
+                };
             }
 
             OpCode::Add => op_binary!(
@@ -419,20 +422,30 @@ impl VM {
                             for upvalue in ups {
                                 match upvalue {
                                     VarRef::Local(idx) => {
-                                        let value = self.stack.get(self.frame()
+                                        let frame_offset = self.frame()
                                             .map(|f| f.stack_offset)
-                                            .unwrap_or_default() + *idx)
-                                            .ok_or_else(|| errors::runtime(
-                                                frame.last_location(),
-                                                "Attempted to access local upvalue at a stack index which is invalid.",
-                                                "Please report this issue to us on GitHub with example code."))?.clone();
-                                        let closed = Rc::new(Value::Boxed(Box::new(value)));
-                                        let upvalue = Upvalue::Closed(closed.clone());
-                                        self.stack[*idx] = closed;
+                                            .unwrap_or_default();
+
+                                        let idx = frame_offset + *idx + 1;
+
+                                        let mut target = self.open_upvalues.cursor_front_mut();
+                                        while target.current().map(|u| matches!(u.as_ref(), Upvalue::Open(uidx) if *uidx > idx)).unwrap_or_default() {
+                                            target.move_next();
+                                        }
+
+                                        if target.current().map(|u| matches!(u.as_ref(), Upvalue::Open(uidx) if *uidx == idx)).unwrap_or_default() {
+                                            let upvalue = target.current().unwrap().clone();
+                                            upvalues.push(upvalue);
+                                        } else {
+                                            let upvalue = Rc::new(Upvalue::Open(idx));
+                                            target.insert_before(upvalue.clone());
+                                            upvalues.push(upvalue);
+                                        }
+                                    },
+                                    VarRef::Transitive(idx) => {
+                                        let upvalue = frame.upvalues[*idx].clone();
                                         upvalues.push(upvalue);
                                     },
-                                    VarRef::Transitive(idx) => 
-                                        upvalues.push(frame.upvalues[*idx].clone()),
                                 }
                             }
 
@@ -448,8 +461,13 @@ impl VM {
                     }
                 }
             },
+            OpCode::CloseUpvalue => {
+                self.close_upvalues(self.stack.len() - 1)?;
+                self.pop()?;
+            },
             OpCode::Return => {
                 let result = self.pop()?;
+                self.close_upvalues(frame.stack_offset)?;
                 self.stack.truncate(frame.stack_offset);
                 if self.frames.pop().is_none() {
                     self.pop()?; // pop callee
@@ -514,11 +532,36 @@ impl VM {
     fn jump(&mut self, ip: usize) {
         self.frames.last_mut().unwrap().ip = ip;
     }
+
+    fn close_upvalues(&mut self, stack_top: usize) -> Result<(), LoxError> {
+        let mut cursor = self.open_upvalues.cursor_front_mut();
+        while cursor.current().map(|u| matches!(u.as_ref(), Upvalue::Open(uidx) if *uidx >= stack_top)).unwrap_or_default() {
+            let mut upvalue = cursor.pop_front().unwrap();
+            if let Upvalue::Open(idx) = upvalue.as_ref() {
+                let value = self.stack.get(*idx)
+                    .ok_or_else(|| errors::runtime(
+                        Loc::Unknown,
+                        format!("Attempted to access local upvalue at a locals index {} which is invalid.", *idx),
+                        "Please report this issue to us on GitHub with example code."))?.clone();
+
+                let boxed_value = Rc::new(Value::Boxed(Box::new(value)));
+                self.stack[*idx] = boxed_value.clone();
+
+                let closed = Upvalue::Closed(boxed_value);
+                let target = unsafe { Rc::get_mut_unchecked(&mut upvalue) };
+                *target = closed;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Debug for VM {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(f, "Chunk: {:?}", self.frame().expect("a frame"))?;
+        let frame = self.frame().expect("a frame");
+
+        writeln!(f, "Chunk: {} {:?}", frame.name, frame)?;
 
         write!(f, "Stack:")?;
         for value in self.stack.iter() {
@@ -531,6 +574,12 @@ impl Debug for VM {
             self.frame().map(|f| f.stack_offset).unwrap_or_default()
         ) {
             write!(f, "[{}] ", value)?;
+        }
+        writeln!(f)?;
+
+        write!(f, "Upvalues:")?;
+        for upvalue in frame.upvalues.iter() {
+            write!(f, "[{}] ", upvalue)?;
         }
         writeln!(f)?;
 
@@ -549,6 +598,7 @@ impl Default for VM {
             output: Box::new(std::io::stdout()),
 
             stack: Vec::new(),
+            open_upvalues: LinkedList::new(),
 
             globals: HashMap::new(),
             frames: Vec::new(),
