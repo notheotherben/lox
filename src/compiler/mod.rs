@@ -1,6 +1,15 @@
-use crate::{vm::Function, LoxError, ast::{Stmt, StmtVisitor}};
+use crate::{LoxError, ast::{Stmt, StmtVisitor}};
 
+mod chunk;
 mod comp;
+mod fun;
+mod ops;
+mod value;
+
+pub use chunk::Chunk;
+pub use fun::Function;
+pub use ops::OpCode;
+pub use value::{Primitive, VarRef};
 
 pub fn compile(stmts: &[Stmt]) -> Result<Function, LoxError> {
     let mut compiler =  comp::Compiler::new();

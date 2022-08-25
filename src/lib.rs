@@ -1,4 +1,4 @@
-#![feature(arc_unwrap_or_clone, get_mut_unchecked, linked_list_cursors)]
+#![feature(linked_list_cursors)]
 
 mod core;
 pub mod ast;

@@ -1,11 +1,11 @@
 use std::{
     fmt::{Debug, Display},
-    rc::Rc,
+    rc::Rc, cell::RefCell,
 };
 
-use crate::LoxError;
+use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{Chunk, Value, VM, VarRef, value::Upvalue};
+use super::{VM, value::Upvalue, Value};
 
 #[derive(Clone)]
 pub enum Function {
@@ -15,44 +15,24 @@ pub enum Function {
         #[allow(clippy::type_complexity)]
         fun: Rc<Box<dyn Fn(&mut VM) -> Result<Value, LoxError> + 'static>>,
     },
-    OpenClosure {
+    Closure {
         name: Rc<String>,
         arity: usize,
-        upvalues: Vec<VarRef>,
-        chunk: Rc<Chunk>,
-    },
-    ClosedClosure {
-        name: Rc<String>,
-        arity: usize,
-        upvalues: Vec<Rc<Upvalue>>,
+        upvalues: Vec<Rc<RefCell<Upvalue>>>,
         chunk: Rc<Chunk>,
     },
 }
 
 impl Function {
-    pub fn closure<S: Into<String>>(name: S, arity: usize, upvalues: Vec<VarRef>, chunk: Chunk) -> Self {
-        Function::OpenClosure {
-            name: Rc::new(name.into()),
-            arity,
-            upvalues,
-            chunk: Rc::new(chunk),
-        }
+    pub fn capture<C: FnMut(Vec<VarRef>) -> Result<Vec<Rc<RefCell<Upvalue>>>, LoxError>>(fun: &CFunction, mut capture: C) -> Result<Self, LoxError> {
+        Ok(Function::Closure {
+                name: fun.name.clone(),
+                arity: fun.arity,
+                upvalues: capture(fun.upvalues.clone())?,
+                chunk: fun.chunk.clone(),
+        })
     }
-
-    pub fn capture<C: FnMut(&Vec<VarRef>) -> Result<Vec<Rc<Upvalue>>, LoxError>>(&self, mut capture: C) -> Result<Self, LoxError> {
-        match self {
-            Function::OpenClosure { name, arity, upvalues, chunk } => Ok(Function::ClosedClosure {
-                name: name.clone(),
-                arity: *arity,
-                upvalues: capture(upvalues)?,
-                chunk: chunk.clone(),
-            }),
-            _ => Err(crate::errors::system(
-                format!("Attempted to construct a closure from a non-chunk function {}.", self),
-                "Please report this error to us on GitHub with example code."))
-        }
-    }
-
+    
     pub fn native<N: Into<String>, F: Fn(&mut VM) -> Result<Value, LoxError> + 'static>(
         name: N,
         arity: usize,
@@ -64,32 +44,24 @@ impl Function {
             fun: Rc::new(Box::new(fun)),
         }
     }
+
+    pub fn arity(&self) -> usize {
+        match self {
+            Function::Native { arity, .. } => *arity,
+            Function::Closure { arity, .. } => *arity,
+        }
+    }
 }
 
 impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Function::Native { name: name1, arity: arity1, .. }, Function::Native { name: name2, arity: arity2, .. }) => {
+                name1 == name2 && arity1 == arity2
+            }
             (
-                Function::OpenClosure {
-                    name: name1,
-                    arity: arity1,
-                    chunk: chunk1,
-                    ..
-                },
-                Function::OpenClosure {
-                    name: name2,
-                    arity: arity2,
-                    chunk: chunk2,
-                    ..
-                },
-            ) => {
-                name1 == name2
-                    && arity1 == arity2
-                    && Rc::ptr_eq(chunk1, chunk2)
-            },
-            (
-                Function::ClosedClosure { name, arity, upvalues, chunk },
-                Function::ClosedClosure { name: name2, arity: arity2, upvalues: upvalues2, chunk: chunk2 },
+                Function::Closure { name, arity, upvalues, chunk },
+                Function::Closure { name: name2, arity: arity2, upvalues: upvalues2, chunk: chunk2 },
             ) => {
                 name == name2 && arity == arity2 && upvalues == upvalues2 && Rc::ptr_eq(chunk, chunk2)
             },
@@ -107,9 +79,8 @@ impl PartialOrd for Function {
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Function::OpenClosure { name, .. } => write!(f, "<chunk {}>", name),
             Function::Native { name, .. } => write!(f, "<native {}>", name),
-            Function::ClosedClosure { name, .. } => write!(f, "<fn {}>", name),
+            Function::Closure { name, .. } => write!(f, "<fn {}>", name),
         }
     }
 }
@@ -117,9 +88,8 @@ impl Display for Function {
 impl Debug for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Function::OpenClosure { chunk, .. } => write!(f, "<chunk>\n{}", chunk),
             Function::Native { name, .. } => write!(f, "<native {}>", name),
-            Function::ClosedClosure { name, chunk, .. } => write!(f, "<fn {}>\n{}", name, chunk),
+            Function::Closure { name, chunk, .. } => write!(f, "<fn {}>\n{}", name, chunk),
         }
     }
 }

@@ -2,13 +2,13 @@ use std::fmt::Display;
 
 use crate::core::Loc;
 
-use super::{ops::OpCode, value::Value, VarRef, Function};
+use super::{OpCode, Primitive, VarRef, Function};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Chunk {
-    pub(super) code: Vec<OpCode>,
-    pub(super) constants: Vec<Value>,
-    pub(super) locations: Vec<(usize, u8)>,
+    pub(crate) code: Vec<OpCode>,
+    pub(crate) constants: Vec<Primitive>,
+    pub(crate) locations: Vec<(usize, u8)>,
 }
 
 impl Chunk {
@@ -40,7 +40,7 @@ impl Chunk {
         self.code[index] = op;
     }
 
-    pub fn add_constant(&mut self, value: Value) -> usize {
+    pub fn add_constant(&mut self, value: Primitive) -> usize {
         self.constants.push(value);
         self.constants.len() - 1
     }
@@ -88,7 +88,7 @@ impl Chunk {
 
                 OpCode::Call(arity) => writeln!(f, "{} {}", instruction, arity),
                 OpCode::Closure(idx) => {
-                    if let Value::Function(Function::OpenClosure { name, upvalues, .. }) = &self.constants[*idx] {
+                    if let Primitive::Function(Function { name, upvalues, .. }) = &self.constants[*idx] {
                         writeln!(f, "{} <fn {}>", instruction, name)?;
 
                         for upvalue in upvalues.iter() {
@@ -123,7 +123,7 @@ impl Display for Chunk {
         }
 
         for constant in self.constants.iter() {
-            if let Value::Function(Function::OpenClosure { name, chunk, .. }) = constant {
+            if let Primitive::Function(Function { name, chunk, .. }) = constant {
                 writeln!(f, "\n--------- START {} ---------", name)?;
                 writeln!(f, "{}", chunk)?;
                 writeln!(f, "---------  END {}  ---------\n", name)?;
@@ -142,7 +142,7 @@ mod tests {
     fn test_chunk() {
         let mut chunk = Chunk::default();
 
-        let constant = chunk.add_constant(Value::Number(1.2));
+        let constant = chunk.add_constant(Primitive::Number(1.2));
         chunk.write(OpCode::Constant(constant), Loc::new(123));
 
         chunk.write(OpCode::Return, Loc::new(123));

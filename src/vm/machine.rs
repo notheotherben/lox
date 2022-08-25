@@ -1,17 +1,17 @@
-use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTime};
+use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTime, cell::RefCell};
 
-use crate::{errors, Loc, LoxError};
+use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
 
-use super::{chunk::Chunk, ops::OpCode, value::Value, value::{VarRef, Upvalue}, Frame, Function, Class};
+use super::{value::{Upvalue}, Frame, Function, Value, Class};
 
 pub struct VM {
     debug: bool,
     output: Box<dyn std::io::Write>,
 
-    stack: Vec<Rc<Value>>,
-    open_upvalues: LinkedList<Rc<Upvalue>>,
+    stack: Vec<Value>,
+    open_upvalues: LinkedList<Rc<RefCell<Upvalue>>>,
 
-    globals: HashMap<String, Rc<Value>>,
+    globals: HashMap<String, RefCell<Value>>,
     frames: Vec<Frame>,
 }
 
@@ -23,7 +23,7 @@ macro_rules! op_binary {
 
             #[allow(unused_parens)]
             let result = $op;
-            $self.push(Rc::new(Value::$res(result)))
+            $self.push(Value::$res(result))
         }
     };
 
@@ -33,11 +33,11 @@ macro_rules! op_binary {
             let left = $self.pop()?;
 
             #[allow(unused_parens)]
-            match (left.as_ref(), right.as_ref()) {
+            match (left, right) {
                 $(
                     (Value::$src($left), Value::$src($right)) => {
                         let result = $op;
-                        $self.push(Rc::new(Value::$res(result)))
+                        $self.push(Value::$res(result))
                     }
                 )+
                 (left, right) => return Err(errors::runtime(
@@ -51,7 +51,7 @@ macro_rules! op_binary {
 }
 
 impl VM {
-    pub fn call(&mut self, func: Function) -> Result<(), LoxError> {
+    pub fn call(&mut self, func: CFunction) -> Result<(), LoxError> {
         self.frames.push(Frame::root_function(func));
 
         self.run()
@@ -74,22 +74,24 @@ impl VM {
         }
     }
 
-    pub fn with_native<N: Into<String>, F: Fn(&[Rc<Value>]) -> Result<Value, LoxError> + 'static>(
+    pub fn with_native<N: Into<String>, F: Fn(&[Value]) -> Result<Value, LoxError> + 'static>(
         mut self,
         name: N,
         arity: usize,
         fun: F,
     ) -> Self {
         let name = name.into();
+        let function = Value::Function(Rc::new(Function::native(name.clone(), arity, move |vm| {
+            let frame = vm.frame().ok_or_else(|| errors::runtime(Loc::Native, 
+                "No active frame on the virtual machine call stack.",
+                "Report this issue to us on GitHub with example code to reproduce the problem."))?;
+            
+            fun(&vm.stack[frame.stack_offset + 1..])
+        })));
+
         self.globals.insert(
-            name.clone(),
-            Rc::new(Value::Function(Function::native(name, arity, move |vm| {
-                let frame = vm.frame().ok_or_else(|| errors::runtime(Loc::Native, 
-                    "No active frame on the virtual machine call stack.",
-                    "Report this issue to us on GitHub with example code to reproduce the problem."))?;
-                
-                fun(&vm.stack[frame.stack_offset + 1..])
-            }))),
+            name,
+            RefCell::new(function),
         );
         self
     }
@@ -151,12 +153,20 @@ impl VM {
 
     fn step(&mut self, frame: Frame, instruction: OpCode) -> Result<bool, LoxError> {
         match instruction {
-            OpCode::Nil => self.stack.push(Rc::new(Value::Nil)),
-            OpCode::True => self.stack.push(Rc::new(Value::Bool(true))),
-            OpCode::False => self.stack.push(Rc::new(Value::Bool(false))),
+            OpCode::Nil => self.stack.push(Value::Nil),
+            OpCode::True => self.stack.push(Value::Bool(true)),
+            OpCode::False => self.stack.push(Value::Bool(false)),
             OpCode::Constant(idx) => {
                 if let Some(value) = frame.constant(idx) {
-                    self.stack.push(Rc::new(value.clone()));
+                    let value = match value {
+                        Primitive::Nil => Value::Nil,
+                        Primitive::Bool(b) => Value::Bool(*b),
+                        Primitive::Number(n) => Value::Number(*n),
+                        Primitive::String(s) => Value::String(s.clone()),
+                        primitive => Value::Primitive(primitive.clone())
+                    };
+
+                    self.stack.push(value);
                 } else {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -167,10 +177,10 @@ impl VM {
             }
 
             OpCode::DefineGlobal(idx) => {
-                if let Some(Value::String(key)) = frame.constant(idx) {
+                if let Some(Primitive::String(key)) = frame.constant(idx) {
                     let key = key.clone();
                     let value = self.pop()?;
-                    self.globals.insert(key, value);
+                    self.globals.insert(key, RefCell::new(value));
                 } else {
                     return Err(errors::runtime(
                     frame.last_location(),
@@ -180,10 +190,10 @@ impl VM {
                 }
             }
             OpCode::GetGlobal(idx) => {
-                if let Some(Value::String(key)) = frame.constant(idx) {
+                if let Some(Primitive::String(key)) = frame.constant(idx) {
                     let key = key.clone();
                     if let Some(value) = self.globals.get(&key) {
-                        self.stack.push(value.clone());
+                        self.stack.push(value.borrow().clone());
                     } else {
                         return Err(errors::runtime(
                         frame.last_location(),
@@ -200,10 +210,10 @@ impl VM {
                 }
             }
             OpCode::SetGlobal(idx) => {
-                if let Some(Value::String(key)) = frame.constant(idx) {
+                if let Some(Primitive::String(key)) = frame.constant(idx) {
                     let key = key.clone();
                     let value = self.peek()?;
-                    self.globals.insert(key, value);
+                    self.globals.insert(key, RefCell::new(value.clone()));
                 } else {
                     return Err(errors::runtime(
                     frame.last_location(),
@@ -215,15 +225,13 @@ impl VM {
 
             OpCode::GetUpvalue(idx) => {
                 if let Some(upvalue) = frame.upvalues.get(idx) {
-                    match upvalue.as_ref() {
-                        Upvalue::Open(idx) => {
-                            let value = self.stack[*idx].clone();
-                            self.stack.push(value);
-                        }
-                        Upvalue::Closed(value) => {
-                            self.stack.push(Rc::clone(value));
-                        }
-                    }
+                    upvalue.borrow().closed.clone().map(|c| c.as_ref().borrow().clone()).or_else(|| {
+                        upvalue.borrow().index().and_then(|idx| self.stack.get(idx).cloned())
+                    }).map(|value| self.stack.push(value)).ok_or_else(|| errors::runtime(
+                        frame.last_location(),
+                        "Upvalue referenced a stack index which does not exist.",
+                        "Make sure that you are passing valid upvalue indices to the virtual machine."
+                    ))?;
                 } else {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -236,14 +244,12 @@ impl VM {
                 let value = self.pop()?;
 
                 if let Some(upvalue) = frame.upvalues.get(idx) {
-                    match upvalue.as_ref() {
-                        Upvalue::Open(idx) => {
-                            self.stack[*idx] = value;
-                        }
-                        Upvalue::Closed(closure) => {
-                            let mut closure = closure.clone();
-                            let target = unsafe { Rc::get_mut_unchecked(&mut closure) };
-                            *target = Rc::unwrap_or_clone(value);
+                    match upvalue.borrow().closed.as_ref() {
+                        Some(target) => {
+                            target.replace(value);
+                        },
+                        None => {
+                            self.stack[upvalue.borrow().index().unwrap()] = value
                         }
                     }
                 } else {
@@ -278,24 +284,25 @@ impl VM {
                     .map(|f| f.stack_offset)
                     .unwrap_or_default()
                     + idx;
+                
                 let value = self.pop()?;
 
-                if idx >= self.stack.len() {
-                    return Err(errors::runtime(
+                match self.stack.get(idx) {
+                    Some(..) => {
+                        self.stack[idx] = value;
+                    },
+                    None => return Err(errors::runtime(
                         frame.last_location(),
                         "Invalid stack index in byte code for local assignment.",
                         "Make sure that you are passing valid stack indices to the virtual machine."
-                    ));
+                    ))
                 }
-
-                let target = unsafe{ Rc::get_mut_unchecked(self.stack.get_unchecked_mut(idx)) };
-                *target = Rc::unwrap_or_clone(value);
             }
 
             OpCode::Add => op_binary!(
-            self(frame, left, right),
-            Number: (left + right) => Number,
-            String: (format!("{}{}", left, right)) => String),
+                self(frame, left, right),
+                Number: (left + right) => Number,
+                String: (format!("{}{}", left, right)) => String),
             OpCode::Subtract => {
                 op_binary!(self(frame, left, right), Number: (left - right) => Number)
             }
@@ -306,8 +313,8 @@ impl VM {
                 op_binary!(self(frame, left, right), Number: (left / right) => Number)
             }
 
-            OpCode::Negate => match self.pop()?.as_ref() {
-                Value::Number(n) => self.stack.push(Rc::new(Value::Number(-n))),
+            OpCode::Negate => match self.pop()? {
+                Value::Number(n) => self.stack.push(Value::Number(-n)),
                 _ => {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -318,7 +325,7 @@ impl VM {
             },
             OpCode::Not => {
                 let value = self.pop()?;
-                self.push(Rc::new(Value::Bool(!value.is_truthy())));
+                self.push(Value::Bool(!value.is_truthy()));
             }
 
             OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
@@ -342,50 +349,30 @@ impl VM {
                     ));
                 }
 
-                if let Some(value) = self.stack.get(self.stack.len() - call_arity - 2) {
-                    match value.as_ref() {
-                        Value::Function(Function::ClosedClosure{name, chunk, upvalues, arity, ..}) => {
-                            if *arity != call_arity {
-                                return Err(errors::runtime(
-                                    frame.last_location(),
-                                    format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
-                                    "Make sure that you are passing the correct number of arguments to the function."
-                                ));
-                            }
-
-                            let new_frame = Frame::call(name.clone(), upvalues.clone(), chunk.clone(), self.stack.len() - arity - 1);
-                            self.frames.push(new_frame);
-                        },
-                        Value::Function(Function::Native { name, arity, fun }) => {
-                            if *arity != call_arity {
-                                return Err(errors::runtime(
-                                    frame.last_location(),
-                                    format!("Invalid number of arguments, got {} but expected {}.", call_arity, arity),
-                                    "Make sure that you are passing the correct number of arguments to the function."
-                                ));
-                            }
-
-                            let fun = fun.clone();
-
-                            let stack_top = self.stack.len() - arity - 1;
-                            let new_frame = Frame::call(name.clone(), Vec::new(), Rc::new(Chunk::default()), stack_top);
-                            self.frames.push(new_frame);
-                            let result = fun(self)?;
-                            self.frames.pop();
-                            self.stack.truncate(stack_top);
-                            self.push(Rc::new(result));
-                        },
-                        Value::Function(Function::OpenClosure { name, .. }) => {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                format!("The function '{}' has not been converted into a closure due to a bug in the compiler.", name),
-                                "Report this issue to us on GitHub with example code."))
-                        }
-                        target => return Err(errors::runtime(
+                if let Some(Value::Function(function)) = self.stack.get(self.stack.len() - call_arity - 2) {
+                    if function.arity() != call_arity {
+                        return Err(errors::runtime(
                             frame.last_location(),
-                            format!("Unsupported calling target {:?}", target),
-                            "Make sure that you are calling a valid function or class constructor."))
-                        }
+                            format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.arity()),
+                            "Make sure that you are passing the correct number of arguments to the function."
+                        ));
+                    }
+                    
+                    match function.as_ref() {
+                        Function::Closure {..} => {
+                            self.frames.push(Frame::call(function.clone(), self.stack.len()));
+                        },
+                        Function::Native { fun, .. } => {
+                            let native = fun.clone();
+
+                            self.frames.push(Frame::call(function.clone(), self.stack.len()));
+
+                            let result = native(self)?;
+                            let call_frame = self.frames.pop().unwrap();
+                            self.stack.truncate(call_frame.stack_offset);
+                            self.push(result);
+                        },
+                    }
                 } else {
                     return Err(errors::runtime(
                     frame.last_location(),
@@ -405,8 +392,8 @@ impl VM {
                 };
 
                 match value {
-                    Value::Function(fun) => {
-                        let closure = fun.capture(|ups| {
+                    Primitive::Function(fun) => {
+                        let closure = Function::capture(fun, |ups| {
                             let mut upvalues = Vec::with_capacity(ups.len());
                             for upvalue in ups {
                                 match upvalue {
@@ -415,24 +402,25 @@ impl VM {
                                             .map(|f| f.stack_offset)
                                             .unwrap_or_default();
 
-                                        let idx = frame_offset + *idx + 1;
+                                        let idx = frame_offset + idx + 1;
 
                                         let mut target = self.open_upvalues.cursor_front_mut();
-                                        while target.current().map(|u| matches!(u.as_ref(), Upvalue::Open(uidx) if *uidx > idx)).unwrap_or_default() {
+                                        while target.current().map(|u| u.borrow().index().unwrap() > idx).unwrap_or_default() {
                                             target.move_next();
                                         }
 
-                                        if target.current().map(|u| matches!(u.as_ref(), Upvalue::Open(uidx) if *uidx == idx)).unwrap_or_default() {
+                                        if target.current().map(|u| u.borrow().index().unwrap() == idx).unwrap_or_default() {
                                             let upvalue = target.current().unwrap().clone();
                                             upvalues.push(upvalue);
                                         } else {
-                                            let upvalue = Rc::new(Upvalue::Open(idx));
+                                            let upvalue = Rc::new(RefCell::new(Upvalue::open(idx)));
                                             target.insert_before(upvalue.clone());
                                             upvalues.push(upvalue);
                                         }
                                     },
                                     VarRef::Transitive(idx) => {
-                                        let upvalue = frame.upvalues[*idx].clone();
+                                        let upvalue = frame.upvalues[idx].clone();
+                                        println!("!!!!!! {}", upvalue.borrow());
                                         upvalues.push(upvalue);
                                     },
                                 }
@@ -440,7 +428,7 @@ impl VM {
 
                             Ok(upvalues)
                         })?;
-                        self.push(Rc::new(Value::Function(closure)));
+                        self.push(Value::Function(Rc::new(closure)));
                     },
                     _ => {
                         return Err(errors::runtime(
@@ -473,8 +461,8 @@ impl VM {
                     "Make sure that you are passing valid constant indices to the virtual machine."
                 ))?;
 
-                if let Value::String(name) = name {
-                    self.push(Rc::new(Value::Class(Rc::new(Class::new(name)))));
+                if let Primitive::String(name) = name {
+                    self.push(Value::Class(Rc::new(Class::new(name))));
                 } else {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -504,11 +492,11 @@ impl VM {
         Ok(true)
     }
 
-    fn push(&mut self, value: Rc<Value>) {
+    fn push(&mut self, value: Value) {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Result<Rc<Value>, LoxError> {
+    fn pop(&mut self) -> Result<Value, LoxError> {
         if let Some(value) = self.stack.pop() {
             Ok(value)
         } else {
@@ -522,9 +510,9 @@ impl VM {
         }
     }
 
-    fn peek(&self) -> Result<Rc<Value>, LoxError> {
+    fn peek(&self) -> Result<&Value, LoxError> {
         if let Some(value) = self.stack.last() {
-            Ok(value.clone())
+            Ok(value)
         } else {
             Err(errors::runtime(
                 self.frame()
@@ -542,19 +530,18 @@ impl VM {
 
     fn close_upvalues(&mut self, stack_top: usize) -> Result<(), LoxError> {
         let mut cursor = self.open_upvalues.cursor_front_mut();
-        while cursor.current().map(|u| matches!(u.as_ref(), Upvalue::Open(uidx) if *uidx >= stack_top)).unwrap_or_default() {
-            let mut upvalue = cursor.pop_front().unwrap();
-            if let Upvalue::Open(idx) = upvalue.as_ref() {
-                let value = self.stack.get(*idx)
+        while cursor.current().map(|u| u.borrow().index().unwrap_or_default() >= stack_top).unwrap_or_default() {
+            let upvalue = cursor.pop_front().unwrap();
+            
+            if !upvalue.borrow().is_closed() {
+                let idx = upvalue.borrow().index().unwrap();
+                let value = self.stack.get(idx)
                     .ok_or_else(|| errors::runtime(
                         Loc::Unknown,
-                        format!("Attempted to access local upvalue at a locals index {} which is invalid.", *idx),
+                        format!("Attempted to access local upvalue at a locals index {} which is invalid.", idx),
                         "Please report this issue to us on GitHub with example code."))?.clone();
 
-                self.stack[*idx] = value.clone();
-                let closed = Upvalue::Closed(value);
-                let target = unsafe { Rc::get_mut_unchecked(&mut upvalue) };
-                *target = closed;
+                self.stack[idx] = Value::Pointer(upvalue.borrow_mut().close(RefCell::new(value)));
             }
         }
 
@@ -584,13 +571,13 @@ impl Debug for VM {
 
         write!(f, "Upvalues:")?;
         for upvalue in frame.upvalues.iter() {
-            write!(f, "[{}] ", upvalue)?;
+            write!(f, "[{}] ", upvalue.borrow())?;
         }
         writeln!(f)?;
 
         write!(f, "Globals:")?;
         for (key, value) in self.globals.iter() {
-            write!(f, "{}=[{}] ", key, value)?;
+            write!(f, "{}=[{}] ", key, value.borrow())?;
         }
         writeln!(f)
     }
@@ -650,7 +637,7 @@ mod tests {
                     {
                         let op = OpCode::$code$((
                             $(
-                                chunk.add_constant(Value::$ty($val.into())),
+                                chunk.add_constant(Primitive::$ty($val.into())),
                             ),+
                         ))?;
 

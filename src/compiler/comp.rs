@@ -4,7 +4,7 @@ use crate::{
     ast::{Expr, ExprVisitor, Literal, Stmt, StmtVisitor},
     errors,
     lexer::Token,
-    vm::{Chunk, Function, OpCode, VarRef, Value},
+    compiler::{Chunk, Function, OpCode, VarRef, Primitive},
     Loc, LoxError,
 };
 
@@ -40,7 +40,7 @@ impl Compiler {
         let mut states = self.states;
         let state = states.pop().unwrap();
 
-        Function::closure(String::default(), 0, state.upvalues, state.chunk)
+        Function::new(String::default(), 0, state.upvalues, state.chunk)
     }
 
     fn chunk(&self) -> &Chunk {
@@ -74,7 +74,7 @@ impl Compiler {
         let index = state
             .identifiers
             .entry(name.to_string())
-            .or_insert_with(|| state.chunk.add_constant(Value::String(name.to_string())));
+            .or_insert_with(|| state.chunk.add_constant(Primitive::String(name.to_string())));
         *index
     }
 
@@ -213,7 +213,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
         let comp = self.states.pop().unwrap();
 
-        let ptr = self.chunk_mut().add_constant(Value::Function(Function::closure(
+        let ptr = self.chunk_mut().add_constant(Primitive::Function(Function::new(
             format!("anonymous@{}", loc),
             params.len(),
             comp.upvalues,
@@ -235,12 +235,12 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
                 loc.clone(),
             ),
             Literal::Number(value) => {
-                let ptr = self.chunk_mut().add_constant(Value::Number(*value));
+                let ptr = self.chunk_mut().add_constant(Primitive::Number(*value));
 
                 self.chunk_mut().write(OpCode::Constant(ptr), loc.clone())
             }
             Literal::String(value) => {
-                let ptr = self.chunk_mut().add_constant(Value::String(value.clone()));
+                let ptr = self.chunk_mut().add_constant(Primitive::String(value.clone()));
 
                 self.chunk_mut().write(OpCode::Constant(ptr), loc.clone())
             }
@@ -398,7 +398,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         let comp = self.states.pop().unwrap();
 
         let ident = self.identifier(name.lexeme());
-        let ptr = self.chunk_mut().add_constant(Value::Function(Function::closure(
+        let ptr = self.chunk_mut().add_constant(Primitive::Function(Function::new(
             name.lexeme(),
             params.len(),
             comp.upvalues,

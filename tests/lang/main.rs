@@ -7,7 +7,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
         "Make sure that the file is a valid UTF-8 file.",
     ))?;
 
-    let expect_re = regex::RegexBuilder::new(r"//\s*expect: (.*)")
+    let expect_re = regex::RegexBuilder::new(r"//\s*expect: (.*)[\r\n]*")
         .case_insensitive(true)
         .dot_matches_new_line(false)
         .build()
@@ -16,7 +16,8 @@ fn run_file(path: &str) -> Result<(), LoxError> {
     let expected: String = expect_re
         .captures_iter(content).map(|m| m.get(1).expect("expect expression should have a value").as_str())
         .collect::<Vec<&str>>()
-        .join("\n");
+        .join("\n")
+        .replace("\r\n", "\n");
 
     let mut errors = Vec::new();
 
@@ -57,7 +58,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
             assert!(errors.is_empty(), "Did not expect a runtime error, got {:?}", errors);
         }
 
-        let actual = output.to_string();
+        let actual = output.to_string().replace("\r\n", "\n");
         assert_eq!(expected.trim(), actual.trim());
     }
 

@@ -1,4 +1,6 @@
-use std::{fmt::Display, rc::Rc};
+use std::{fmt::Display, rc::Rc, cell::RefCell};
+
+use crate::compiler::Primitive;
 
 use super::{Function, Class, Instance};
 
@@ -8,9 +10,11 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Function(Function),
+    Primitive(Primitive),
+    Pointer(Rc<RefCell<Value>>),
+    Function(Rc<Function>),
     Class(Rc<Class>),
-    Instance(Instance),
+    Instance(Rc<RefCell<Instance>>),
 }
 
 impl Value {
@@ -30,59 +34,56 @@ impl Display for Value {
             Value::Bool(b) => write!(f, "{}", *b),
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
+            Value::Primitive(p) => write!(f, "{}", p),
+            Value::Pointer(p) => write!(f, "*{}", p.as_ref().borrow()),
             Value::Function(fun) => write!(f, "{}", fun),
-            Value::Class(cls) => write!(f, "{}", cls),
-            Value::Instance(inst) => write!(f, "{}", inst),
+            Value::Class(c) => write!(f, "{}", c),
+            Value::Instance(i) => write!(f, "{}", i.as_ref().borrow()),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Upvalue {
-    Open(usize),
-    Closed(Rc<Value>),
+pub struct Upvalue {
+    stack_offset: Option<usize>,
+    pub closed: Option<Rc<RefCell<Value>>>,
+}
+
+impl Upvalue {
+    pub fn open(stack_offset: usize) -> Self {
+        Upvalue {
+            stack_offset: Some(stack_offset),
+            closed: None,
+        }
+    }
+
+    pub fn close(&mut self, value: RefCell<Value>) -> Rc<RefCell<Value>> {
+        self.stack_offset = None;
+        self.closed = Some(Rc::new(value));
+
+        self.closed.clone().unwrap()
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.is_some()
+    }
+
+    pub fn index(&self) -> Option<usize> {
+        self.stack_offset
+    }
 }
 
 impl PartialEq for Upvalue {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Upvalue::Open(idx1), Upvalue::Open(idx2)) => idx1 == idx2,
-            (Upvalue::Closed(val1), Upvalue::Closed(val2)) => Rc::ptr_eq(val1, val2),
-            _ => false
-        }
+        self.stack_offset == other.stack_offset && self.closed.as_ref() == other.closed.as_ref()
     }
 }
 
 impl Display for Upvalue {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Upvalue::Open(idx) => write!(f, "open upvalue {}", *idx),
-            Upvalue::Closed(value) => write!(f, "closed upvalue [{}]", value)
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum VarRef {
-    Local(usize),
-    Transitive(usize),
-}
-
-impl PartialEq for VarRef {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (VarRef::Local(idx1), VarRef::Local(idx2)) => idx1 == idx2,
-            (VarRef::Transitive(idx1), VarRef::Transitive(idx2)) => idx1 == idx2,
-            _ => false,
-        }
-    }
-}
-
-impl Display for VarRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            VarRef::Local(_) => write!(f, "local"),
-            VarRef::Transitive(_) => write!(f, "upvalue"),
+        match self.stack_offset {
+            Some(offset) => write!(f, "open upvalue [{}]", offset),
+            None => write!(f, "closed upvalue [{:?}]", self.closed.as_ref()),
         }
     }
 }
