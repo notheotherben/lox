@@ -1,13 +1,13 @@
 mod class;
 mod fun;
 mod frame;
+mod gc;
 mod machine;
-mod stack;
 mod value;
 
-pub use class::{Class, Instance};
-pub use fun::Function;
-pub use frame::Frame;
+pub(self) use class::{Class, Instance};
+pub(self) use fun::Function;
+pub(self) use frame::Frame;
+pub(self) use gc::{Collectible, Collector, GC, Object};
 pub use machine::VM;
-pub use stack::Stack;
-pub use value::Value;
+pub(self) use value::Value;

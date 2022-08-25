@@ -2,16 +2,17 @@ use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTi
 
 use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
 
-use super::{value::{Upvalue}, Frame, Function, Value, Class};
+use super::{value::{Upvalue}, Frame, Function, Value, Class, GC, Collector, Collectible, Object};
 
 pub struct VM {
     debug: bool,
     output: Box<dyn std::io::Write>,
+    gc: GC,
 
     stack: Vec<Value>,
     open_upvalues: LinkedList<Rc<RefCell<Upvalue>>>,
 
-    globals: HashMap<String, RefCell<Value>>,
+    globals: HashMap<String, Rc<Object<Value>>>,
     frames: Vec<Frame>,
 }
 
@@ -91,13 +92,19 @@ impl VM {
 
         self.globals.insert(
             name,
-            RefCell::new(function),
+            Rc::new(Object::new(function)),
         );
         self
     }
 
     pub fn frame(&self) -> Option<Frame> {
         self.frames.last().cloned()
+    }
+
+    fn alloc(&mut self, value: Value) -> Rc<Object<Value>> {
+        self.gc.collect(self);
+
+        self.gc.alloc(value)
     }
 
     fn run(&mut self) -> Result<(), LoxError> {
@@ -180,7 +187,8 @@ impl VM {
                 if let Some(Primitive::String(key)) = frame.constant(idx) {
                     let key = key.clone();
                     let value = self.pop()?;
-                    self.globals.insert(key, RefCell::new(value));
+                    let value = self.alloc(value);
+                    self.globals.insert(key, value);
                 } else {
                     return Err(errors::runtime(
                     frame.last_location(),
@@ -193,7 +201,7 @@ impl VM {
                 if let Some(Primitive::String(key)) = frame.constant(idx) {
                     let key = key.clone();
                     if let Some(value) = self.globals.get(&key) {
-                        self.stack.push(value.borrow().clone());
+                        self.stack.push(value.value().clone());
                     } else {
                         return Err(errors::runtime(
                         frame.last_location(),
@@ -213,7 +221,8 @@ impl VM {
                 if let Some(Primitive::String(key)) = frame.constant(idx) {
                     let key = key.clone();
                     let value = self.peek()?;
-                    self.globals.insert(key, RefCell::new(value.clone()));
+                    let value = self.alloc(value.clone());
+                    self.globals.insert(key, value);
                 } else {
                     return Err(errors::runtime(
                     frame.last_location(),
@@ -225,7 +234,7 @@ impl VM {
 
             OpCode::GetUpvalue(idx) => {
                 if let Some(upvalue) = frame.upvalues.get(idx) {
-                    upvalue.borrow().closed.clone().map(|c| c.as_ref().borrow().clone()).or_else(|| {
+                    upvalue.borrow().closed.clone().map(|c| c.value().clone()).or_else(|| {
                         upvalue.borrow().index().and_then(|idx| self.stack.get(idx).cloned())
                     }).map(|value| self.stack.push(value)).ok_or_else(|| errors::runtime(
                         frame.last_location(),
@@ -541,11 +550,24 @@ impl VM {
                         format!("Attempted to access local upvalue at a locals index {} which is invalid.", idx),
                         "Please report this issue to us on GitHub with example code."))?.clone();
 
-                self.stack[idx] = Value::Pointer(upvalue.borrow_mut().close(RefCell::new(value)));
+                let value = self.gc.alloc(value);
+                self.stack[idx] = Value::Pointer(upvalue.borrow_mut().close(value));
             }
         }
 
         Ok(())
+    }
+}
+
+impl Collectible for VM {
+    fn mark(&self, gc: &dyn Collector) {
+        for slot in self.stack.iter() {
+            slot.mark(gc);
+        }
+
+        for value in self.globals.values() {
+            value.mark(gc);
+        }
     }
 }
 
@@ -577,7 +599,7 @@ impl Debug for VM {
 
         write!(f, "Globals:")?;
         for (key, value) in self.globals.iter() {
-            write!(f, "{}=[{}] ", key, value.borrow())?;
+            write!(f, "{}=[{}] ", key, value.value())?;
         }
         writeln!(f)
     }
@@ -588,6 +610,7 @@ impl Default for VM {
         Self {
             debug: false,
             output: Box::new(std::io::stdout()),
+            gc: GC::new(),
 
             stack: Vec::new(),
             open_upvalues: LinkedList::new(),

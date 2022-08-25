@@ -5,7 +5,7 @@ use std::{
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{VM, value::Upvalue, Value};
+use super::{VM, value::Upvalue, Value, Collectible};
 
 #[derive(Clone)]
 pub enum Function {
@@ -49,6 +49,19 @@ impl Function {
         match self {
             Function::Native { arity, .. } => *arity,
             Function::Closure { arity, .. } => *arity,
+        }
+    }
+}
+
+impl Collectible for Function {
+    fn mark(&self, gc: &dyn super::Collector) {
+        match self {
+            Function::Native { .. } => {},
+            Function::Closure { upvalues, .. } => {
+                for upvalue in upvalues.iter() {
+                    upvalue.borrow().mark(gc);
+                }
+            },
         }
     }
 }

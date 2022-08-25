@@ -1,20 +1,20 @@
-use std::{fmt::Display, rc::Rc, cell::RefCell};
+use std::{fmt::Display, rc::Rc};
 
 use crate::compiler::Primitive;
 
-use super::{Function, Class, Instance};
+use super::{Function, Class, Instance, Collectible, Collector, Object};
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,
     Bool(bool),
     Number(f64),
     String(String),
     Primitive(Primitive),
-    Pointer(Rc<RefCell<Value>>),
+    Pointer(Rc<Object<Value>>),
     Function(Rc<Function>),
     Class(Rc<Class>),
-    Instance(Rc<RefCell<Instance>>),
+    Instance(Rc<Object<Instance>>),
 }
 
 impl Value {
@@ -27,6 +27,18 @@ impl Value {
     }
 }
 
+impl Collectible for Value {
+    fn mark(&self, gc: &dyn Collector) {
+        match self {
+            Value::Pointer(p) => p.mark(gc),
+            Value::Function(f) => f.mark(gc),
+            Value::Class(c) => c.mark(gc),
+            Value::Instance(i) => i.mark(gc),
+            _ => {}
+        }
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -35,10 +47,10 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Primitive(p) => write!(f, "{}", p),
-            Value::Pointer(p) => write!(f, "*{}", p.as_ref().borrow()),
+            Value::Pointer(p) => write!(f, "*{}", p.value()),
             Value::Function(fun) => write!(f, "{}", fun),
             Value::Class(c) => write!(f, "{}", c),
-            Value::Instance(i) => write!(f, "{}", i.as_ref().borrow()),
+            Value::Instance(i) => write!(f, "{}", i.value()),
         }
     }
 }
@@ -46,7 +58,7 @@ impl Display for Value {
 #[derive(Debug, Clone)]
 pub struct Upvalue {
     stack_offset: Option<usize>,
-    pub closed: Option<Rc<RefCell<Value>>>,
+    pub closed: Option<Rc<Object<Value>>>,
 }
 
 impl Upvalue {
@@ -57,9 +69,9 @@ impl Upvalue {
         }
     }
 
-    pub fn close(&mut self, value: RefCell<Value>) -> Rc<RefCell<Value>> {
+    pub fn close(&mut self, value: Rc<Object<Value>>) -> Rc<Object<Value>> {
         self.stack_offset = None;
-        self.closed = Some(Rc::new(value));
+        self.closed = Some(value);
 
         self.closed.clone().unwrap()
     }
@@ -70,6 +82,14 @@ impl Upvalue {
 
     pub fn index(&self) -> Option<usize> {
         self.stack_offset
+    }
+}
+
+impl Collectible for Upvalue {
+    fn mark(&self, gc: &dyn Collector) {
+        if let Some(closed) = self.closed.as_ref() {
+            closed.mark(gc);
+        }
     }
 }
 
