@@ -102,7 +102,15 @@ impl VM {
     }
 
     fn alloc(&mut self, value: Value) -> Rc<Object<Value>> {
-        self.gc.collect(self);
+        self.gc.collect(|gc| {
+            for slot in self.stack.iter() {
+                slot.mark(gc);
+            }
+    
+            for value in self.globals.values() {
+                value.mark(gc);
+            }
+        });
 
         self.gc.alloc(value)
     }
@@ -556,18 +564,6 @@ impl VM {
         }
 
         Ok(())
-    }
-}
-
-impl Collectible for VM {
-    fn mark(&self, gc: &dyn Collector) {
-        for slot in self.stack.iter() {
-            slot.mark(gc);
-        }
-
-        for value in self.globals.values() {
-            value.mark(gc);
-        }
     }
 }
 

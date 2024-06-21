@@ -1,76 +1,72 @@
-use std::{rc::Rc, cell::{RefCell, Ref, RefMut}};
+use std::{cell::{Cell, Ref, RefCell, RefMut}, rc::Rc};
 
 use super::Value;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd)]
 pub struct Object<T> {
     value: RefCell<T>,
-    marked: RefCell<bool>,
+    marked: Cell<bool>,
 }
 
 pub trait Collector {
-    fn alloc(&self, value: Value) -> Rc<Object<Value>>;
-    fn mark(&self, object: Rc<Object<Value>>);
+    fn alloc(&mut self, value: Value) -> Rc<Object<Value>>;
+    fn mark(&mut self, object: Rc<Object<Value>>);
 }
 
 pub trait Collectible {
-    fn mark(&self, gc: &dyn Collector);
+    fn mark(&self, gc: &mut dyn Collector);
 }
 
 pub struct GC {
-    heap: RefCell<Vec<Rc<Object<Value>>>>,
-    grey_stack: RefCell<Vec<Rc<Object<Value>>>>,
+    heap: Vec<Rc<Object<Value>>>,
+    grey_stack: Vec<Rc<Object<Value>>>,
 }
 
 impl GC {
     pub fn new() -> Self {
         Self {
-            heap: RefCell::new(Vec::new()),
-            grey_stack: RefCell::new(Vec::new()),
+            heap: Vec::new(),
+            grey_stack: Vec::new(),
         }
     }
 
-    pub fn collect(&self, root: &dyn Collectible) {
+    pub fn collect<M>(&mut self, marker: M)
+        where M: FnOnce(&mut dyn Collector)
+    {
         self.prepare();
-        root.mark(self);
+        marker(self);
         self.scan();
         self.sweep();
     }
 
     fn prepare(&self) {
-        self.heap.borrow().iter().for_each(|object| {
+        self.heap.iter().for_each(|object| {
             object.marked.replace(false);
         });
     }
 
-    fn scan(&self) {
-        loop {
-            let grey = self.grey_stack.borrow_mut().pop();
-            if grey.is_none() {
-                break;
-            }
-
-            let grey = grey.unwrap();
+    fn scan(&mut self) {
+        while let Some(grey) = self.grey_stack.pop() {
             grey.mark(self);
         }
     }
 
-    fn sweep(&self) {
-        self.heap.borrow_mut().retain(|object| *object.marked.borrow());
+    fn sweep(&mut self) {
+        self.heap.retain(|object| object.marked.get());
     }
 }
 
 impl Collector for GC {
-    fn alloc(&self, value: Value) -> Rc<Object<Value>> {
+    fn alloc(&mut self, value: Value) -> Rc<Object<Value>> {
         let object = Rc::new(Object::new(value));
-        self.heap.borrow_mut().push(object.clone());
+        self.heap.push(object.clone());
         object
     }
 
-    fn mark(&self, object: Rc<Object<Value>>) {
-        if !*object.marked.borrow() {
-            object.marked.replace(true);
-            self.grey_stack.borrow_mut().push(object);
+    fn mark(&mut self, object: Rc<Object<Value>>) {
+        if !object.marked.get() {
+            object.marked.set(true);
+            self.grey_stack.push(object);
         }
     }
 }
@@ -79,7 +75,7 @@ impl<T> Object<T> {
     pub fn new(value: T) -> Self {
         Self {
             value: RefCell::new(value),
-            marked: RefCell::new(false),
+            marked: Cell::new(false),
         }
     }
 
@@ -97,7 +93,7 @@ impl<T> Object<T> {
 }
 
 impl<T: Collectible> Collectible for Object<T> {
-    fn mark(&self, gc: &dyn Collector) {
+    fn mark(&self, gc: &mut dyn Collector) {
         self.value().mark(gc);
     }
 }

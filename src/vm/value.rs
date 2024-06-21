@@ -28,7 +28,7 @@ impl Value {
 }
 
 impl Collectible for Value {
-    fn mark(&self, gc: &dyn Collector) {
+    fn mark(&self, gc: &mut dyn Collector) {
         match self {
             Value::Pointer(p) => p.mark(gc),
             Value::Function(f) => f.mark(gc),
@@ -86,7 +86,7 @@ impl Upvalue {
 }
 
 impl Collectible for Upvalue {
-    fn mark(&self, gc: &dyn Collector) {
+    fn mark(&self, gc: &mut dyn Collector) {
         if let Some(closed) = self.closed.as_ref() {
             closed.mark(gc);
         }

@@ -54,7 +54,7 @@ impl Function {
 }
 
 impl Collectible for Function {
-    fn mark(&self, gc: &dyn super::Collector) {
+    fn mark(&self, gc: &mut dyn super::Collector) {
         match self {
             Function::Native { .. } => {},
             Function::Closure { upvalues, .. } => {

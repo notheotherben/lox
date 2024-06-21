@@ -23,7 +23,7 @@ impl Class {
 }
 
 impl Collectible for Class {
-    fn mark(&self, gc: &dyn super::Collector) {
+    fn mark(&self, gc: &mut dyn super::Collector) {
         for fun in self.methods.values() {
             fun.mark(gc);
         }
@@ -53,7 +53,7 @@ pub struct Instance {
 }
 
 impl Collectible for Instance {
-    fn mark(&self, gc: &dyn super::Collector) {
+    fn mark(&self, gc: &mut dyn super::Collector) {
         self.class.mark(gc);
 
         for field in self.fields.values() {
