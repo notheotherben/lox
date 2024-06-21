@@ -1,5 +1,6 @@
 use lox::{errors, CaptureOutput, LoxError};
 
+
 enum ExpectedOutput {
     NoError,
     Text(String),
@@ -72,11 +73,12 @@ fn run_file(path: &str) -> Result<(), LoxError> {
         return Ok(());
     }
 
+    let chunk = lox::compiler::compile(&stmts).expect("no compiler errors after passing analysis");
+    
     let out = CaptureOutput::default();
-    let mut int = lox::interpreter::Interpreter::default()
+    let mut vm = lox::vm::VM::default()
         .with_output(Box::new(out.clone()));
-    let errs = int.interpret(&stmts);
-    for err in errs {
+    if let Err(err) = vm.call(chunk) {
         eprintln!("{}", err);
         had_error = true;
     }
