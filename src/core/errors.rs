@@ -88,7 +88,7 @@ impl From<std::io::Error> for LoxError {
                 "Make sure that the file is not currently open in another application.",
             ),
             kind => system(
-                &format!("We were unable to open the file you provided due to a {} error.", kind), 
+                format!("We were unable to open the file you provided due to a {} error.", kind), 
                 "Check the internal error message and try searching for a solution online.")
         }
     }

@@ -273,7 +273,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
             },
             token => return Err(errors::language(
                 op.location(),
-                &format!("Received unexpected logical operator {:?}", token),
+                format!("Received unexpected logical operator {:?}", token),
                 "Report this error with the compiler to us on GitHub with sample code to reproduce the error."))
         }
 

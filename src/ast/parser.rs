@@ -14,7 +14,7 @@ struct ParseContext<I: Iterator<Item = Token>> {
 // Macros which make it easier to implement certain common parts of the parser.
 macro_rules! rd_term {
     ($name:ident($context:ident) :=> $ret:ty : $body:expr) => {
-        fn $name<'a, T: Iterator<Item = Token>>(
+        fn $name<T: Iterator<Item = Token>>(
             $context: &mut ParseContext<T>,
         ) -> Result<$ret, LoxError> {
             $body
@@ -247,7 +247,7 @@ impl Parser {
             if params.len() >= 255 {
                 return Err(errors::language(
                     ident.location(),
-                    &format!("Found {} parameters in function definition, which is more than the 255 argument limit.", params.len()),
+                    format!("Found {} parameters in function definition, which is more than the 255 argument limit.", params.len()),
                     "Make sure that you don't have more than 255 parameters in a function definition and try refactoring your code to accept an array or object of arguments."
                 ))
             }
@@ -460,7 +460,7 @@ impl Parser {
                 Expr::Get(target, property) => Ok(Expr::Set(target, property, Box::new(value))),
                 _ => Err(errors::language(
                     equals.location(),
-                    &format!("Expected a variable identifier to be assigned to, but got {:?} instead.", expr),
+                    format!("Expected a variable identifier to be assigned to, but got {:?} instead.", expr),
                     "Make sure that you provide the name of a variable to assign to."
                 )),
             }
@@ -500,7 +500,7 @@ impl Parser {
                     if args.len() >= 255 {
                         return Err(errors::language(
                             call.location(),
-                            &format!("Found {} arguments in function call, which is more than the 255 argument limit.", args.len()),
+                            format!("Found {} arguments in function call, which is more than the 255 argument limit.", args.len()),
                             "Make sure that you don't have more than 255 arguments in a function call and try refactoring your code to accept an array or object of arguments."
                         ))
                     }
@@ -536,7 +536,7 @@ impl Parser {
             Some(num@Token::Number(..)) => {
                 let value = num.lexeme().parse().map_err(|e| errors::language(
                     num.location(),
-                    &format!("Unable to parse number '{}': {}", num.lexeme(), e),
+                    format!("Unable to parse number '{}': {}", num.lexeme(), e),
                     "Make sure you have provided a valid number within the bounds of a 64-bit floating point number."
                 ))?;
                 Ok(Expr::Literal(num.location(), Literal::Number(value)))
@@ -596,6 +596,7 @@ impl Parser {
 }
 
 #[cfg(test)]
+#[allow(clippy::never_loop)]
 mod tests {
     use crate::{
         ast::{printer::AstPrinter, StmtVisitor, ExprVisitor},

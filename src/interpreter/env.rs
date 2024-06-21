@@ -60,8 +60,8 @@ impl Scope {
         } else {
             Err(errors::runtime(
                 key.location(),
-                &format!("Attempted to assign to an undefined variable '{}'", &key),
-                &format!("Try defining the variable instead using `var {} = {}`.", &key, value),
+                format!("Attempted to assign to an undefined variable '{}'", &key),
+                format!("Try defining the variable instead using `var {} = {}`.", &key, value),
             ))
         }
     }

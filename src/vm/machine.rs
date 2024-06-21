@@ -2,7 +2,7 @@ use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTi
 
 use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
 
-use super::{value::{Upvalue}, Frame, Function, Value, Class, GC, Collector, Collectible, Object};
+use super::{value::Upvalue, Frame, Function, Value, Class, GC, Collector, Collectible, Object};
 
 pub struct VM {
     debug: bool,
@@ -205,7 +205,7 @@ impl VM {
                     } else {
                         return Err(errors::runtime(
                         frame.last_location(),
-                        &format!("The variable '{}' is not defined.", key),
+                        format!("The variable '{}' is not defined.", key),
                         "Make sure that you have defined the variable using the `var` keyword before referencing it."
                     ));
                     }

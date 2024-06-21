@@ -65,7 +65,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     (left, Value::String(right)) => Ok(Value::String(format!("{}{}", left, right))),
                     (left, right) => Err(errors::runtime(
                         op.location(),
-                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
+                        format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide either numbers or strings on both the left and right hand sides of the multiplication operator."
                     ))
                 }
@@ -75,7 +75,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left - right)),
                     (left, right) => Err(errors::runtime(
                         op.location(),
-                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
+                        format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide numbers on both the left and right hand sides of the subtraction operator.",
                     ))
                 }
@@ -85,7 +85,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left / right)),
                     (left, right) => Err(errors::runtime(
                         op.location(),
-                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
+                        format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide numbers on both the left and right hand sides of the division operator.",
                     ))
                 }
@@ -95,7 +95,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     (Value::Number(left), Value::Number(right)) => Ok(Value::Number(left * right)),
                     (left, right) => Err(errors::runtime(
                         op.location(),
-                        &format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
+                        format!("Invalid operands to binary operator: `{:?}` and `{:?}`", left, right),
                         "Provide numbers on both the left and right hand sides of the multiplication operator.",
                     ))
                 }
@@ -113,7 +113,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     if init.arity() != args.len() {
                         return Err(errors::runtime(
                             close.location(),
-                            &format!("Class init function expects {} arguments, but got {}.", init.arity(), args.len()),
+                            format!("Class init function expects {} arguments, but got {}.", init.arity(), args.len()),
                             "Provide the correct number of arguments to the class's `init` method."
                         ));
                     }
@@ -127,7 +127,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                 } else if !args.is_empty() {
                     return Err(errors::runtime(
                         close.location(),
-                        &format!("Class init function expects no arguments, but got {}.", args.len()),
+                        format!("Class init function expects no arguments, but got {}.", args.len()),
                         "Provide the correct number of arguments to the class's `init` method."
                     ));
                 }
@@ -138,7 +138,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                 if args.len() != fun.arity() {
                     return Err(errors::runtime(
                         close.location(),
-                        &format!("Expected {} arguments but got {}.", fun.arity(), args.len()),
+                        format!("Expected {} arguments but got {}.", fun.arity(), args.len()),
                         "Provide the correct number of arguments to the function call."
                     ));
                 }
@@ -152,7 +152,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             },
             other => Err(errors::runtime(
                 close.location(),
-                &format!("Attempted to invoke a value which is not a function or class `{}`.", other),
+                format!("Attempted to invoke a value which is not a function or class `{}`.", other),
                 "Make sure that you are attempting to call a function or class object."
             ))
         }
@@ -170,7 +170,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Value::Class(class) => {
                 class.get(property.lexeme()).ok_or_else(|| errors::runtime(
                     property.location(),
-                    &format!("Class `{}` does not have a static property `{}`.", class.name(), property.lexeme()),
+                    format!("Class `{}` does not have a static property `{}`.", class.name(), property.lexeme()),
                     "Make sure that you are attempting to access a static property that exists on this class object."
                 ))
             },
@@ -225,7 +225,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                 let loc = loc.with_sample(format!("super.{}", method.lexeme()));
                 Ok(Value::Function(superclass.find_method(method.lexeme()).ok_or_else(|| errors::runtime(
                     loc.clone(),
-                    &format!("Attempted to call a method `{}` on a superclass which does not have a method with that name.", method.lexeme()),
+                    format!("Attempted to call a method `{}` on a superclass which does not have a method with that name.", method.lexeme()),
                     "Make sure that you are attempting to call a method on a superclass which exists."
                 ))?.bind(instance, loc)))
             },
@@ -260,7 +260,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
                     Value::Number(num) => Ok(Value::Number(-num)),
                     _ => Err(errors::runtime(
                         op.location(),
-                        &format!("Invalid operand to unary operator: `{:?}`", right),
+                        format!("Invalid operand to unary operator: `{:?}`", right),
                         "Provide a number to the unary negation operator, or remove the minus sign."
                     ))
                 }
@@ -277,7 +277,7 @@ impl ExprVisitor<Result<Value, LoxError>> for Interpreter {
             Some(value) => Ok(value),
             None => Err(errors::runtime(
                 name.location(),
-                &format!("Variable `{}` is not defined.", name.lexeme()),
+                format!("Variable `{}` is not defined.", name.lexeme()),
                 "Define the variable before you attempt to reference it."
             ))
         }
@@ -370,7 +370,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
                     class.define(name.lexeme(), fun);
                 },
                 _ => return Err(errors::system(
-                    &format!("Unexpected statement in class definition: {:?}", method),
+                    format!("Unexpected statement in class definition: {:?}", method),
                     "This should not have occurred, please report the issue along with sample code."
                 ))
             }
@@ -443,6 +443,7 @@ impl StmtVisitor<Result<Value, LoxError>> for Interpreter {
 }
 
 #[cfg(test)]
+#[allow(clippy::never_loop)]
 mod tests {
     use core::panic;
 

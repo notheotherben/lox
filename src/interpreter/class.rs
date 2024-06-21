@@ -70,7 +70,7 @@ impl Instance {
             self.class.find_method(property.lexeme()).map(|fun| Value::Function(fun.bind(self.clone(), property.location())))
         }).ok_or_else(|| errors::runtime(
             property.location(),
-            &format!("{} does not have a property `{}`.", self.class, property.lexeme()),
+            format!("{} does not have a property `{}`.", self.class, property.lexeme()),
             "Make sure that you are attempting to access a property which exists on this instance.",
         ))
     }

@@ -136,7 +136,7 @@ impl<'a> Scanner<'a> {
 
                 c => return Some(Err(errors::language(
                     self.location().with_sample(self.source[last_line..loc].to_string()),
-                    &format!("We found an unexpected character '{}' where we were expecting one of: [whitespace, parenthesis, brace, operator, identifier, number, string, comment]", c),
+                    format!("We found an unexpected character '{}' where we were expecting one of: [whitespace, parenthesis, brace, operator, identifier, number, string, comment]", c),
                     "Make sure you have entered valid Lox code and have not accidentally closed a string.",
                 )))
             }
