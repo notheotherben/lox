@@ -1,21 +1,21 @@
-use std::{rc::Rc, fmt::{Debug, Display}, cell::RefCell};
+use std::{rc::Rc, fmt::{Debug, Display}};
 
 use crate::{Loc, compiler::{Chunk, VarRef, Primitive, OpCode}};
 
-use super::{value::Upvalue, Function};
+use super::{gc::Collectible, value::Upvalue, Alloc, Allocator, Function, GC};
 use crate::compiler::Function as CFunction;
 
 #[derive(Clone)]
 pub struct Frame {
     pub name: Rc<String>,
     pub chunk: Rc<Chunk>,
-    pub upvalues: Vec<Rc<RefCell<Upvalue>>>,
+    pub upvalues: Vec<Alloc<Upvalue>>,
     pub stack_offset: usize,
     pub ip: usize,
 }
 
 impl Frame {
-    pub fn root_function(func: CFunction) -> Frame {
+    pub fn root_function(func: CFunction, gc: &mut GC) -> Frame {
         let CFunction { name, arity, upvalues, chunk } = func;
         
         if arity != 0 {
@@ -24,7 +24,7 @@ impl Frame {
 
         let upvalues = upvalues.iter().map(|upvalue| {
             if let VarRef::Local(idx) = upvalue {
-                Rc::new(RefCell::new(Upvalue::open(*idx)))
+                gc.alloc(Upvalue::Open(*idx))
             } else {
                 panic!("Attempted to construct a root frame with a non-local upvalue.")
             }
@@ -64,7 +64,7 @@ impl Frame {
                 Frame {
                     name: name.clone(),
                     chunk: chunk.clone(),
-                    upvalues: upvalues.clone(),
+                    upvalues: upvalues.to_vec(),
                     stack_offset: stack_size - *arity - 1,
                     ip: 0,
                 }
@@ -103,5 +103,13 @@ impl Display for Frame {
 impl Debug for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.chunk.disassemble(self.ip, f)
+    }
+}
+
+impl Collectible for Frame {
+    fn mark(&self, gc: &mut GC) {
+        for upvalue in self.upvalues.iter() {
+            gc.mark(*upvalue);
+        }
     }
 }

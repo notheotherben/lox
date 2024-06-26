@@ -1,9 +1,8 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::fmt::Display;
 
-use super::{Function, Value, Collectible};
+use super::{Alloc, Collectible, Function, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
@@ -23,7 +22,7 @@ impl Class {
 }
 
 impl Collectible for Class {
-    fn mark(&self, gc: &mut dyn super::Collector) {
+    fn mark(&self, gc: &mut super::GC) {
         for fun in self.methods.values() {
             fun.mark(gc);
         }
@@ -49,15 +48,15 @@ impl Display for Class {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     pub class: Rc<Class>,
-    pub fields: HashMap<String, RefCell<Value>>,
+    pub fields: HashMap<String, Alloc<Value>>,
 }
 
 impl Collectible for Instance {
-    fn mark(&self, gc: &mut dyn super::Collector) {
+    fn mark(&self, gc: &mut super::GC) {
         self.class.mark(gc);
 
         for field in self.fields.values() {
-            field.borrow().mark(gc);
+            field.mark(gc);
         }
     }
 }

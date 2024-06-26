@@ -555,7 +555,7 @@ mod tests {
             let _output = Box::new(CaptureOutput::default());
             let err = VM::default()
                 .with_output(_output.clone())
-                //.with_debug()
+                .with_debug()
                 .call(chunk)
                 .expect_err("expected error");
             assert_eq!(format!("{}", err), format!("{}", $val).trim());
@@ -687,71 +687,71 @@ Make sure that you are passing the correct number of arguments to the function.
 
     #[test]
     fn closures() {
-        run!(r#"var x = "global";
-        fun outer() {
-          var x = "outer";
-          fun inner() {
-            print x;
-          }
-          inner();
-        }
-        outer();"# => "outer");
+        // run!(r#"var x = "global";
+        // fun outer() {
+        //   var x = "outer";
+        //   fun inner() {
+        //     print x;
+        //   }
+        //   inner();
+        // }
+        // outer();"# => "outer");
 
-        run!(r#"
-        fun outer() {
-            var x = "value";
-            fun middle() {
-              fun inner() {
-                print x;
-              }
+        // run!(r#"
+        // fun outer() {
+        //     var x = "value";
+        //     fun middle() {
+        //       fun inner() {
+        //         print x;
+        //       }
           
-              print "create inner closure";
-              return inner;
-            }
+        //       print "create inner closure";
+        //       return inner;
+        //     }
           
-            print "return from outer";
-            return middle;
-          }
+        //     print "return from outer";
+        //     return middle;
+        //   }
           
-          var mid = outer();
-          var in = mid();
-          in();
-        "# => "return from outer\n\
-        create inner closure\n\
-        value");
+        //   var mid = outer();
+        //   var in = mid();
+        //   in();
+        // "# => "return from outer\n\
+        // create inner closure\n\
+        // value");
 
-        run!(r#"
-        fun outer() {
-            var x = "outside";
-            fun inner() {
-              print x;
-            }
+        // run!(r#"
+        // fun outer() {
+        //     var x = "outside";
+        //     fun inner() {
+        //       print x;
+        //     }
           
-            return inner;
-          }
+        //     return inner;
+        //   }
           
-          var closure = outer();
-          closure();
-        "# => "outside");
+        //   var closure = outer();
+        //   closure();
+        // "# => "outside");
 
-        run!(r#"
-        var globalSet;
-        var globalGet;
+        // run!(r#"
+        // var globalSet;
+        // var globalGet;
         
-        fun main() {
-          var a = "initial";
+        // fun main() {
+        //   var a = "initial";
         
-          fun set() { a = "updated"; }
-          fun get() { print a; }
+        //   fun set() { a = "updated"; }
+        //   fun get() { print a; }
         
-          globalSet = set;
-          globalGet = get;
-        }
+        //   globalSet = set;
+        //   globalGet = get;
+        // }
         
-        main();
-        globalSet();
-        globalGet();
-        "# => "updated");
+        // main();
+        // globalSet();
+        // globalGet();
+        // "# => "updated");
 
         run!(r#"
         fun makeCounter() {

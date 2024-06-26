@@ -1,11 +1,11 @@
 use std::{
     fmt::{Debug, Display},
-    rc::Rc, cell::RefCell,
+    rc::Rc,
 };
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{VM, value::Upvalue, Value, Collectible};
+use super::{gc::Allocator, value::Upvalue, Alloc, Collectible, Value, VM};
 
 #[derive(Clone)]
 pub enum Function {
@@ -18,17 +18,17 @@ pub enum Function {
     Closure {
         name: Rc<String>,
         arity: usize,
-        upvalues: Vec<Rc<RefCell<Upvalue>>>,
+        upvalues: Vec<Alloc<Upvalue>>,
         chunk: Rc<Chunk>,
     },
 }
 
 impl Function {
-    pub fn capture<C: FnMut(Vec<VarRef>) -> Result<Vec<Rc<RefCell<Upvalue>>>, LoxError>>(fun: &CFunction, mut capture: C) -> Result<Self, LoxError> {
+    pub fn capture<C: FnMut(&[VarRef]) -> Result<Vec<Alloc<Upvalue>>, LoxError>>(fun: &CFunction, mut capture: C) -> Result<Self, LoxError> {
         Ok(Function::Closure {
                 name: fun.name.clone(),
                 arity: fun.arity,
-                upvalues: capture(fun.upvalues.clone())?,
+                upvalues: capture(&fun.upvalues)?,
                 chunk: fun.chunk.clone(),
         })
     }
@@ -54,12 +54,12 @@ impl Function {
 }
 
 impl Collectible for Function {
-    fn mark(&self, gc: &mut dyn super::Collector) {
+    fn mark(&self, gc: &mut super::GC) {
         match self {
             Function::Native { .. } => {},
             Function::Closure { upvalues, .. } => {
                 for upvalue in upvalues.iter() {
-                    upvalue.borrow().mark(gc);
+                    gc.mark(*upvalue);
                 }
             },
         }
