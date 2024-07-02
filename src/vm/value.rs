@@ -4,7 +4,7 @@ use crate::compiler::Primitive;
 
 use super::{gc::{Allocator, GC}, Alloc, Class, Collectible, Function, Instance};
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Nil,
     Bool(bool),
@@ -50,6 +50,31 @@ impl Collectible for Value {
     }
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Nil, Value::Nil) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Number(a), Value::Number(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            (Value::Class(a), Value::Class(b)) => Rc::ptr_eq(a, b),
+            (Value::Instance(a), Value::Instance(b)) => a == b,
+            (Value::Function(a), Value::Function(b)) => Rc::ptr_eq(a, b),
+            _ => false
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
+            (Value::String(a), Value::String(b)) => a.partial_cmp(b),
+            _ => None
+        }
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -58,7 +83,7 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Primitive(p) => write!(f, "{}", p),
-            Value::Pointer(p) => write!(f, "*{}", p),
+            Value::Pointer(p) => write!(f, "{}", p),
             Value::Function(fun) => write!(f, "{}", fun),
             Value::Class(c) => write!(f, "{}", c),
             Value::Instance(i) => write!(f, "{}", i),

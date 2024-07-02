@@ -40,7 +40,6 @@ impl GC {
     {
         if self.allocated_bytes() >= self.checkpoint {
             let stats = self.force_collect(marker);
-            self.checkpoint = self.allocated_bytes() + self.growth_factor;
             Some(stats)
         } else {
             None
@@ -58,6 +57,8 @@ impl GC {
         self.scan();
 
         self.sweep();
+
+        self.checkpoint = self.allocated_bytes() * self.growth_factor;
 
         GCStats {
             allocated: self.allocated_bytes(),
@@ -130,12 +131,12 @@ impl Display for GCStats {
         let mut allocated_prefix = 0;
         let mut collected_prefix = 0;
 
-        while allocated >= 1024 && allocated_prefix < prefixes.len() - 1{
+        while allocated >= 1024 * 10 && allocated_prefix < prefixes.len() - 1{
             allocated /= 1024;
             allocated_prefix += 1;
         }
 
-        while collected >= 1024 && collected_prefix < prefixes.len() - 1{
+        while collected >= 1024 * 10 && collected_prefix < prefixes.len() - 1{
             collected /= 1024;
             collected_prefix += 1;
         }

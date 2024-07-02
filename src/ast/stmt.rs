@@ -38,7 +38,6 @@ pub trait StmtVisitor<T>: ExprVisitor<T> {
             Stmt::While(expr, body) => self.visit_while(expr, body),
         }
     }
-
     
     fn visit_break(&mut self, loc: &Loc) -> T;
     

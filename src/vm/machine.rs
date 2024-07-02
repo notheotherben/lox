@@ -321,11 +321,11 @@ impl VM {
                     .unwrap_or_default()
                     + idx;
                 
-                let value = self.pop()?;
+                let value = self.peek()?;
 
                 match self.stack.get(idx) {
                     Some(..) => {
-                        self.stack[idx] = value;
+                        self.stack[idx] = value.clone();
                     },
                     None => return Err(errors::runtime(
                         frame.last_location(),
@@ -335,10 +335,29 @@ impl VM {
                 }
             }
 
-            OpCode::Add => op_binary!(
-                self(frame, left, right),
-                Number: (left + right) => Number,
-                String: (format!("{}{}", left, right)) => String),
+            OpCode::Add => {
+                let right = self.pop()?;
+                let left = self.pop()?;
+
+                match (left, right) {
+                    (Value::Number(left), Value::Number(right)) => {
+                        self.stack.push(Value::Number(left + right));
+                    },
+                    (Value::String(left), right) => {
+                        self.stack.push(Value::String(format!("{}{}", left, right)));
+                    },
+                    (left, Value::String(right)) => {
+                        self.stack.push(Value::String(format!("{}{}", left, right)));
+                    },
+                    (left, right) => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Operands must be two numbers or two strings, but got {} and {}.", left, right),
+                            "Make sure that you are passing numbers or strings to the + operator."
+                        ));
+                    }
+                }
+            },
             OpCode::Subtract => {
                 op_binary!(self(frame, left, right), Number: (left - right) => Number)
             }
@@ -366,7 +385,9 @@ impl VM {
 
             OpCode::Equal => op_binary!(self(left, right), Any: (left == right) => Bool),
             OpCode::Greater => op_binary!(self(left, right), Any: (left > right) => Bool),
+            OpCode::GreaterEqual => op_binary!(self(left, right), Any: (left >= right) => Bool),
             OpCode::Less => op_binary!(self(left, right), Any: (left < right) => Bool),
+            OpCode::LessEqual => op_binary!(self(left, right), Any: (left <= right) => Bool),
 
             OpCode::Pop => {
                 self.pop()?;
@@ -385,36 +406,46 @@ impl VM {
                     ));
                 }
 
-                if let Some(Value::Function(function)) = self.stack.get(self.stack.len() - call_arity - 2) {
-                    if function.arity() != call_arity {
+                match self.stack.get(self.stack.len() - call_arity - 2) {
+                    Some(Value::Function(function)) => {
+                        if function.arity() != call_arity {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.arity()),
+                                "Make sure that you are passing the correct number of arguments to the function."
+                            ));
+                        }
+                        
+                        match function.as_ref() {
+                            Function::Closure {..} => {
+                                let frame = Frame::call(function.clone(), self.stack.len());
+                                self.frames.push(frame);
+                            },
+                            Function::Native { fun, .. } => {
+                                let native = fun.clone();
+
+                                self.frames.push(Frame::call(function.clone(), self.stack.len()));
+
+                                let result = native(self)?;
+                                let call_frame = self.frames.pop().unwrap();
+                                self.stack.truncate(call_frame.stack_offset);
+                                self.push(result);
+                            },
+                        }
+                    },
+                    Some(non_function_value) => {
                         return Err(errors::runtime(
                             frame.last_location(),
-                            format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.arity()),
-                            "Make sure that you are passing the correct number of arguments to the function."
+                            format!("Attempted to call a non-function value '{}'.", non_function_value),
+                            "Make sure that you are attempting to call a function and not another type of value."
                         ));
                     }
-                    
-                    match function.as_ref() {
-                        Function::Closure {..} => {
-                            let frame = Frame::call(function.clone(), self.stack.len());
-                            self.frames.push(frame);
-                        },
-                        Function::Native { fun, .. } => {
-                            let native = fun.clone();
-
-                            self.frames.push(Frame::call(function.clone(), self.stack.len()));
-
-                            let result = native(self)?;
-                            let call_frame = self.frames.pop().unwrap();
-                            self.stack.truncate(call_frame.stack_offset);
-                            self.push(result);
-                        },
-                    }
-                } else {
-                    return Err(errors::runtime(
-                    frame.last_location(),
-                    "Callee could not be retrieved from the stack based on the known calling convention.",
-                    "Please report this issue to us on GitHub with example code."))
+                    None => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            "Callee could not be retrieved from the stack based on the known calling convention.",
+                            "Please report this issue to us on GitHub with example code."))
+                        }
                 }
             },
             OpCode::Closure(idx) => {
@@ -441,7 +472,7 @@ impl VM {
                                             .unwrap_or_default();
 
                                         // The local upvalue is in a position offset from the current frame's stack start
-                                        let idx = frame_offset + *idx + 1;
+                                        let idx = frame_offset + *idx;
 
                                         // We then start at the beginning of the open_upvalues linked list and move to the first
                                         // upvalue whose index is lower/equal to the current local upvalue index
@@ -496,8 +527,9 @@ impl VM {
                 self.close_upvalues(frame.stack_offset)?;
                 self.stack.truncate(frame.stack_offset);
                 if self.frames.pop().is_none() {
-                    self.pop()?; // pop callee
                     return Ok(false);
+                } else {
+                    self.pop()?; // pop callee
                 }
 
                 self.push(result);

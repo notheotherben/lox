@@ -54,15 +54,15 @@ fn run_file(path: &str) -> Result<(), LoxError> {
         had_error = true;
     }
 
-    if matches!(expected_output, ExpectedOutput::SyntaxError) {
-        if !had_error {
-            let errs = lox::analysis::analyze(&stmts);
-            for err in errs {
-                eprintln!("{}", err);
-                had_error = true;
-            }
+    if !had_error {
+        let errs = lox::analysis::analyze(&stmts);
+        for err in errs {
+            eprintln!("{}", err);
+            had_error = true;
         }
+    }
 
+    if matches!(expected_output, ExpectedOutput::SyntaxError) {
         if !had_error {
             return Err(errors::system(
                 "Expected a syntax error to be present, but it was not.", 
@@ -103,26 +103,6 @@ fn run_file(path: &str) -> Result<(), LoxError> {
         },
         _ => Ok(()),
     }
-}
-
-#[test]
-fn block_scoping() {
-    run_file("tests/data/block_scoping.lox").expect("no errors");
-}
-
-#[test]
-fn if_conditionals() {
-    run_file("tests/data/if_conditionals.lox").expect("no errors");
-}
-
-#[test]
-fn fib() {
-    run_file("tests/data/fib.lox").expect("no errors");
-}
-
-#[test]
-fn functions() {
-    run_file("tests/data/functions.lox").expect("no errors");
 }
 
 include!(concat!(env!("OUT_DIR"), "/tests/data.rs"));

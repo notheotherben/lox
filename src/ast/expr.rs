@@ -60,7 +60,7 @@ pub trait ExprVisitor<T> {
             },
             Expr::Var(name) => {
                 self.visit_var_ref(name)
-            },
+            }
         }
     }
 

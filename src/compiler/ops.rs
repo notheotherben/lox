@@ -28,7 +28,9 @@ pub enum OpCode {
     
     Equal,
     Greater,
+    GreaterEqual,
     Less,
+    LessEqual,
 
     Pop,
     Print,
@@ -73,7 +75,9 @@ impl Display for OpCode {
 
             OpCode::Equal => write!(f, "OP_EQUAL"),
             OpCode::Greater => write!(f, "OP_GREATER"),
+            OpCode::GreaterEqual => write!(f, "OP_GREATER_EQUAL"),
             OpCode::Less => write!(f, "OP_LESS"),
+            OpCode::LessEqual => write!(f, "OP_LESS_EQUAL"),
             
             OpCode::Pop => write!(f, "OP_POP"),
             OpCode::Print => write!(f, "OP_PRINT"),

@@ -71,25 +71,25 @@ impl Chunk {
             }
 
             match instruction {
-                OpCode::Constant(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
-                OpCode::DefineGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
-                OpCode::GetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
-                OpCode::SetGlobal(idx) => writeln!(f, "{} {}", instruction, self.constants[*idx]),
+                OpCode::Constant(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
+                OpCode::DefineGlobal(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
+                OpCode::GetGlobal(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
+                OpCode::SetGlobal(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
 
-                OpCode::GetUpvalue(idx) => writeln!(f, "{} {}", instruction, *idx),
-                OpCode::SetUpvalue(idx) => writeln!(f, "{} {}", instruction, *idx),
+                OpCode::GetUpvalue(idx) => writeln!(f, "{} {} at {}", instruction, *idx, loc),
+                OpCode::SetUpvalue(idx) => writeln!(f, "{} {} at {}", instruction, *idx, loc),
 
-                OpCode::GetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
-                OpCode::SetLocal(idx) => writeln!(f, "{} {}", instruction, *idx),
+                OpCode::GetLocal(idx) => writeln!(f, "{} {} at {}", instruction, *idx, loc),
+                OpCode::SetLocal(idx) => writeln!(f, "{} {} at {}", instruction, *idx, loc),
 
-                OpCode::Jump(ip) => writeln!(f, "{} {}", instruction, ip + *ip),
-                OpCode::JumpIf(ip) => writeln!(f, "{} {}", instruction, ip),
-                OpCode::JumpIfFalse(ip) => writeln!(f, "{} {}", instruction, ip),
+                OpCode::Jump(ip) => writeln!(f, "{} {} at {}", instruction, ip + *ip, loc),
+                OpCode::JumpIf(ip) => writeln!(f, "{} {} at {}", instruction, ip, loc),
+                OpCode::JumpIfFalse(ip) => writeln!(f, "{} {} at {}", instruction, ip, loc),
 
-                OpCode::Call(arity) => writeln!(f, "{} {}", instruction, arity),
+                OpCode::Call(arity) => writeln!(f, "{} {} at {}", instruction, arity, loc),
                 OpCode::Closure(idx) => {
                     if let Primitive::Function(Function { name, upvalues, .. }) = &self.constants[*idx] {
-                        writeln!(f, "{} <fn {}>", instruction, name)?;
+                        writeln!(f, "{} <fn {}> at {}", instruction, name, loc)?;
 
                         for upvalue in upvalues.iter() {
                             match upvalue {
@@ -108,7 +108,7 @@ impl Chunk {
                     Ok(())
                 },
 
-                op => writeln!(f, "{}", op),
+                op => writeln!(f, "{} at {}", op, loc),
             }
         } else {
             writeln!(f, "END")
@@ -150,8 +150,8 @@ mod tests {
         assert_eq!(
             format!("{}", chunk),
             "\
-            0000  123 OP_CONSTANT 1.2\n\
-            0001    | OP_RETURN\n\
+            0000  123 OP_CONSTANT 1.2 at line 123\n\
+            0001    | OP_RETURN at line 123\n\
             "
         );
     }

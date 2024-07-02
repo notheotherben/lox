@@ -14,6 +14,10 @@ while (i < 4) {
   i = i + 1;
 }
 
+print f1; // expect: fun f (0 args)
+print f2; // expect: fun f (0 args)
+print f3; // expect: fun f (0 args)
+
 f1(); // expect: 1
 f2(); // expect: 2
 f3(); // expect: 3

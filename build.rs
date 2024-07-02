@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=tests/");
+    println!("cargo::rerun-if-changed=tests");
     
     build_test_package("data");
     build_test_package("lang");

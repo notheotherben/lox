@@ -98,8 +98,8 @@ impl PartialOrd for Function {
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Function::Native { name, .. } => write!(f, "<native {}>", name),
-            Function::Closure { name, .. } => write!(f, "<fn {}>", name),
+            Function::Native { name, arity, .. } => write!(f, "fun native@{name} ({arity} args)"),
+            Function::Closure { name, arity, .. } => write!(f, "fun {name} ({arity} args)"),
         }
     }
 }

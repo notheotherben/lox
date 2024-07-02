@@ -163,13 +163,11 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
                 self.chunk_mut().write(OpCode::Greater, op.location());
             }
             Token::GreaterEqual(..) => {
-                self.chunk_mut().write(OpCode::Less, op.location());
-                self.chunk_mut().write(OpCode::Not, op.location());
+                self.chunk_mut().write(OpCode::GreaterEqual, op.location());
             }
             Token::Less(..) => self.chunk_mut().write(OpCode::Less, op.location()),
             Token::LessEqual(..) => {
-                self.chunk_mut().write(OpCode::Greater, op.location());
-                self.chunk_mut().write(OpCode::Not, op.location());
+                self.chunk_mut().write(OpCode::LessEqual, op.location());
             }
             _ => todo!("{:?}", op),
         }
@@ -256,8 +254,8 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
             Token::Or(..) => {
                 self.chunk_mut().write(OpCode::JumpIf(0), op.location());
                 let jmp = self.chunk().len() - 1;
-
                 self.chunk_mut().write(OpCode::Pop, op.location());
+
                 self.visit_expr(right)?;
                 let target = self.chunk().len();
                 self.chunk_mut().overwrite(OpCode::JumpIf(target), jmp);
@@ -350,9 +348,9 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         while state.locals.len() > parent_locals_len {
             let local = state.locals.pop().unwrap();
             if local.captured {
-                state.chunk.write(OpCode::CloseUpvalue, Loc::Unknown);
+                state.chunk.write(OpCode::CloseUpvalue, Loc::Native);
             } else {
-                state.chunk.write(OpCode::Pop, Loc::Unknown);
+                state.chunk.write(OpCode::Pop, Loc::Native);
             }
         }
 
@@ -376,7 +374,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
     fn visit_expr_stmt(&mut self, expr: &Expr) -> Result<(), LoxError> {
         self.visit_expr(expr)?;
-        self.chunk_mut().write(OpCode::Pop, Loc::Unknown);
+        self.chunk_mut().write(OpCode::Pop, Loc::Native);
         Ok(())
     }
 
@@ -389,15 +387,22 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     ) -> Result<(), LoxError> {
         self.states.push(CompilerState::default());
 
+        self.define_local(&Token::This(name.location()));
+
         for param in params {
             self.define_local(param);
         }
 
         self.visit_block(body)?;
 
-        let comp = self.states.pop().unwrap();
+        let mut comp = self.states.pop().unwrap();
+
+        // Implicit return (nil)
+        comp.chunk.write(OpCode::Nil, Loc::Unknown);
+        comp.chunk.write(OpCode::Return, Loc::Unknown);
 
         let ident = self.identifier(name.lexeme());
+        
         let ptr = self.chunk_mut().add_constant(Primitive::Function(Function::new(
             name.lexeme(),
             params.len(),
@@ -423,27 +428,28 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         self.chunk_mut().write(OpCode::JumpIfFalse(0), token.location());
         let jmp_else = self.chunk().len() - 1;
 
+        self.chunk_mut().write(OpCode::Pop, Loc::Native);
         self.visit_stmt(then_branch)?;
 
+        // For the else branch, we need to jump over it after the then branch
+        self.chunk_mut().write(OpCode::Jump(0), Loc::Native);
+        let jump_end = self.chunk().len() - 1;
+
+        // When we hit the else branch we want to first clear the condition value from the stack
+        // by having the else-branch jump to this pop statement.
+        let target = self.chunk().len();
+        self.chunk_mut().write(OpCode::Pop, Loc::Native);
+        self.chunk_mut()
+        .overwrite(OpCode::JumpIfFalse(target), jmp_else);
+
         if let Some(else_branch) = else_branch {
-            self.chunk_mut().write(OpCode::Jump(0), Loc::Native);
-            let jump_end = self.chunk().len() - 1;
-            let target = self.chunk().len();
-            self.chunk_mut()
-                .overwrite(OpCode::JumpIfFalse(target), jmp_else);
-            self.chunk_mut().write(OpCode::Pop, Loc::Native);
-
             self.visit_stmt(else_branch)?;
-
-            let target = self.chunk().len();
-            self.chunk_mut()
-                .overwrite(OpCode::Jump(target), jump_end);
-        } else {
-            let target = self.chunk().len();
-            self.chunk_mut()
-                .overwrite(OpCode::JumpIfFalse(target), jmp_else);
-            self.chunk_mut().write(OpCode::Pop, Loc::Native);
         }
+            
+        // Finally we want to tell the then-branch how to jump past the else-branch.
+        let target = self.chunk().len();
+        self.chunk_mut()
+            .overwrite(OpCode::Jump(target), jump_end);
 
         Ok(())
     }
@@ -477,6 +483,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
             self.chunk_mut().write(OpCode::DefineGlobal(ptr), name.location());
         }
 
+
         Ok(())
     }
 
@@ -497,7 +504,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         self.visit_expr(expr)?;
         self.chunk_mut().write(OpCode::JumpIfFalse(0), Loc::Native);
         let jmp_end = self.chunk().len() - 1;
-        //self.chunk_mut().write(OpCode::Pop, Loc::Native);
+        self.chunk_mut().write(OpCode::Pop, Loc::Native);
 
         self.visit_stmt(body)?;
 
@@ -651,8 +658,8 @@ mod tests {
 
     #[test]
     fn functions() {
-        run!("fun foo() { print 1; } print foo;" => "<fn foo>");
-        run!("var foo = fun () { print 1; }; print foo;" => "<fn anonymous@'fun' at line 1>");
+        run!("fun foo() { print 1; } print foo;" => "fun foo (0 args)");
+        run!("var foo = fun () { print 1; }; print foo;" => "fun anonymous@'fun' at line 1 (0 args)");
         run!("fun foo() { print 1; } foo();" => 1);
         run!("fun foo() { print 1; } foo(); foo();" => "1\n1");
         run!("fun foo() { return 1; } print foo();" => 1);
@@ -687,71 +694,71 @@ Make sure that you are passing the correct number of arguments to the function.
 
     #[test]
     fn closures() {
-        // run!(r#"var x = "global";
-        // fun outer() {
-        //   var x = "outer";
-        //   fun inner() {
-        //     print x;
-        //   }
-        //   inner();
-        // }
-        // outer();"# => "outer");
+        run!(r#"var x = "global";
+        fun outer() {
+          var x = "outer";
+          fun inner() {
+            print x;
+          }
+          inner();
+        }
+        outer();"# => "outer");
 
-        // run!(r#"
-        // fun outer() {
-        //     var x = "value";
-        //     fun middle() {
-        //       fun inner() {
-        //         print x;
-        //       }
+        run!(r#"
+        fun outer() {
+            var x = "value";
+            fun middle() {
+              fun inner() {
+                print x;
+              }
           
-        //       print "create inner closure";
-        //       return inner;
-        //     }
+              print "create inner closure";
+              return inner;
+            }
           
-        //     print "return from outer";
-        //     return middle;
-        //   }
+            print "return from outer";
+            return middle;
+          }
           
-        //   var mid = outer();
-        //   var in = mid();
-        //   in();
-        // "# => "return from outer\n\
-        // create inner closure\n\
-        // value");
+          var mid = outer();
+          var in = mid();
+          in();
+        "# => "return from outer\n\
+        create inner closure\n\
+        value");
 
-        // run!(r#"
-        // fun outer() {
-        //     var x = "outside";
-        //     fun inner() {
-        //       print x;
-        //     }
+        run!(r#"
+        fun outer() {
+            var x = "outside";
+            fun inner() {
+              print x;
+            }
           
-        //     return inner;
-        //   }
+            return inner;
+          }
           
-        //   var closure = outer();
-        //   closure();
-        // "# => "outside");
+          var closure = outer();
+          closure();
+        "# => "outside");
 
-        // run!(r#"
-        // var globalSet;
-        // var globalGet;
+        run!(r#"
+        var globalSet;
+        var globalGet;
         
-        // fun main() {
-        //   var a = "initial";
+        fun main() {
+          var a = "initial";
         
-        //   fun set() { a = "updated"; }
-        //   fun get() { print a; }
+          fun set() { a = "updated"; }
+          fun get() { print a; }
         
-        //   globalSet = set;
-        //   globalGet = get;
-        // }
+          globalSet = set;
+          globalGet = get;
+        }
         
-        // main();
-        // globalSet();
-        // globalGet();
-        // "# => "updated");
+        main();
+        globalSet();
+        globalGet();
+        "# => "updated");
 
         run!(r#"
         fun makeCounter() {
