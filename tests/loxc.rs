@@ -123,4 +123,4 @@ mod lang {
 
 
 #[test]
-fn lang_this_closure() { run_file("tests/lang/this/closure.lox").expect("no errors") }
+fn lang_method_arity() { run_file("tests/lang/method/arity.lox").expect("no errors") }

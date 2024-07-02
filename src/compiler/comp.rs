@@ -175,15 +175,28 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<(), LoxError> {
-        self.visit_expr(callee)?;
+        if let Expr::Get(obj, property) = callee {
+            // If we're immediately invoking the result of a property access, we can optimize the
+            // call path using the OpCode::Invoke instruction.
+            self.visit_expr(obj)?;
 
-        self.chunk_mut().write(OpCode::Nil, close.location());
+            for arg in args {
+                self.visit_expr(arg)?;
+            }
 
-        for arg in args {
-            self.visit_expr(arg)?;
+            let prop = self.identifier(property.lexeme());
+            self.chunk_mut().write(OpCode::Invoke(prop, args.len()), property.location());
+        } else {
+            self.visit_expr(callee)?;
+
+            self.chunk_mut().write(OpCode::Nil, close.location());
+
+            for arg in args {
+                self.visit_expr(arg)?;
+            }
+
+            self.chunk_mut().write(OpCode::Call(args.len()), close.location());
         }
-
-        self.chunk_mut().write(OpCode::Call(args.len()), close.location());
 
         Ok(())
     }

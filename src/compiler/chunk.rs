@@ -82,11 +82,16 @@ impl Chunk {
                 OpCode::GetLocal(idx) => writeln!(f, "{} {} at {}", instruction, *idx, loc),
                 OpCode::SetLocal(idx) => writeln!(f, "{} {} at {}", instruction, *idx, loc),
 
+                OpCode::GetProperty(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
+                OpCode::SetProperty(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
+
                 OpCode::Jump(ip) => writeln!(f, "{} {} at {}", instruction, ip + *ip, loc),
                 OpCode::JumpIf(ip) => writeln!(f, "{} {} at {}", instruction, ip, loc),
                 OpCode::JumpIfFalse(ip) => writeln!(f, "{} {} at {}", instruction, ip, loc),
 
                 OpCode::Call(arity) => writeln!(f, "{} {} at {}", instruction, arity, loc),
+                OpCode::Invoke(idx, arity) => writeln!(f, "{} {} {} at {}", instruction, self.constants[*idx], arity, loc),
+
                 OpCode::Closure(idx) => {
                     if let Primitive::Function(Function { name, upvalues, .. }) = &self.constants[*idx] {
                         writeln!(f, "{} <fn {}> at {}", instruction, name, loc)?;
@@ -107,6 +112,9 @@ impl Chunk {
 
                     Ok(())
                 },
+
+                OpCode::Class(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
+                OpCode::Method(idx) => writeln!(f, "{} {} at {}", instruction, self.constants[*idx], loc),
 
                 op => writeln!(f, "{} at {}", op, loc),
             }

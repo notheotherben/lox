@@ -477,94 +477,56 @@ impl VM {
 
                 let function = function.unwrap().clone();
 
-                match function {
-                    Value::Function(function) => {
-                        if function.as_ref().arity() != call_arity {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.as_ref().arity()),
-                                "Make sure that you are passing the correct number of arguments to the function."
-                            ));
-                        }
-                        
-                        match function.as_ref() {
-                            Function::Closure {..} => {
-                                let frame = Frame::call(function, self.stack.len());
-                                self.frames.push(frame);
-                            },
-                            Function::Native { fun, .. } => {
-                                let native = fun.clone();
+                self.call_function(&frame, function, call_arity, false)?;
+            },
+            OpCode::Invoke(property, call_arity) => {
+                if self.frames.len() >= 1000 {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "The maximum call stack size has been exceeded.",
+                        "Make sure that you are not calling functions with unbounded recursion.",
+                    ));
+                }
 
-                                self.frames.push(Frame::call(function, self.stack.len()));
+                if let Some(Primitive::String(key)) = frame.constant(property) {
+                    let key = key.clone();
 
-                                let result = native(self)?;
-                                let call_frame = self.frames.pop().unwrap();
-                                self.stack.truncate(call_frame.stack_offset);
-                                self.push(result);
-                            },
-                        }
-                    },
-                    Value::BoundMethod(instance, function) => {
-                        if function.as_ref().arity() != call_arity {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.as_ref().arity()),
-                                "Make sure that you are passing the correct number of arguments to the function."
-                            ));
-                        }
+                    let obj_idx = self.stack.len() - call_arity - 1;
 
-                        if let Function::Closure { .. } = function.as_ref() {
-                            let frame = Frame::call(function, self.stack.len());
-                            let self_idx = self.stack.len() - call_arity - 1;
-                            self.stack[self_idx] = Value::Instance(instance);
-                            self.frames.push(frame);
-                        } else {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                "Attempted to call a non-closure bound method.",
-                                "Make sure that you are calling a closure bound method."
-                            ));
-                        }
-                    }
-                    Value::Class(class) => {
-                        let instance = self.gc.alloc(Instance::new(class));
-
-                        if let Some(init) = class.as_ref().methods.get("init") {
-                            if init.as_ref().arity() != call_arity {
+                    let function = match self.stack.get(obj_idx).ok_or_else(|| errors::runtime(
+                        frame.last_location(),
+                        format!("Could not retrieve the object upon which the method '{}' should be invoked as it did not exist on the stack.", key),
+                        "Make sure that you are passing valid object references to the virtual machine."
+                    ))? {
+                        Value::Instance(instance) => {
+                            if let Some(value) = instance.as_ref().fields.get(&key) {
+                                value.cloned()
+                            } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(&key) {
+                                Value::BoundMethod(*instance, *method)
+                            } else {
                                 return Err(errors::runtime(
                                     frame.last_location(),
-                                    format!("Invalid number of arguments, got {} but expected {}.", call_arity, init.as_ref().arity()),
-                                    "Make sure that you are passing the correct number of arguments to the function."
+                                    format!("Property '{}' not found on instance.", key),
+                                    "Make sure that you are accessing valid properties on instances."
                                 ));
                             }
-
-                            // Replace the class reference with the instance reference before invoking the init method
-                            let callee_idx = self.stack.len() - call_arity - 1;
-                            self.stack[callee_idx] = Value::Instance(instance);
-
-                            let frame = Frame::call(*init, self.stack.len());
-                            self.frames.push(frame);
-                        } else if call_arity != 0 {
+                        },
+                        value => {
                             return Err(errors::runtime(
                                 frame.last_location(),
-                                "Attempted to instantiate a class with arguments when no init() function is defined.",
-                                "Make sure that you have a valid init() function defined for the class if you wish to provide initialization arguments."
+                                format!("Attempted to get a property from a non-instance value '{}'.", value),
+                                "Make sure that you are accessing properties on instances."
                             ));
-                        } else {
-                            // Remove the class reference and "this" from the stack as we would if we actually ran the function
-                            self.stack.truncate(self.stack.len() - 2);
-                            self.push(Value::Instance(instance));
                         }
+                    };
 
-                        self.collect();
-                    },
-                    non_function_value => {
-                        return Err(errors::runtime(
-                            frame.last_location(),
-                            format!("Attempted to call a non-function value '{}'.", non_function_value),
-                            "Make sure that you are attempting to call a function and not another type of value."
-                        ));
-                    }
+                    self.call_function(&frame, function, call_arity, true)?;
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ));
                 }
             },
             OpCode::Closure(idx) => {
@@ -645,10 +607,10 @@ impl VM {
                 let result = self.pop()?;
                 self.close_upvalues(frame.stack_offset)?;
                 self.stack.truncate(frame.stack_offset);
-                if self.frames.pop().is_none() {
-                    return Ok(false);
-                } else {
-                    self.pop()?; // pop callee
+                match self.frames.pop() {
+                    Some(frame) if !frame.fast_call => { self.pop()?; },
+                    None => return Ok(false),
+                    _ => {},
                 }
 
                 self.push(result);
@@ -752,6 +714,97 @@ impl VM {
 
     fn jump(&mut self, ip: usize) {
         self.frames.last_mut().unwrap().ip = ip;
+    }
+
+    fn call_function(&mut self, frame: &Frame, function: Value, call_arity: usize, fast_call: bool) -> Result<(), LoxError> {
+        match function {
+            Value::Function(function) => {
+                if function.as_ref().arity() != call_arity {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.as_ref().arity()),
+                        "Make sure that you are passing the correct number of arguments to the function."
+                    ));
+                }
+                
+                match function.as_ref() {
+                    Function::Closure {..} => {
+                        self.frames.push(Frame::call(function, self.stack.len(), fast_call));
+                    },
+                    Function::Native { fun, .. } => {
+                        let native = fun.clone();
+
+                        self.frames.push(Frame::call(function, self.stack.len(), fast_call));
+
+                        let result = native(self)?;
+                        let call_frame = self.frames.pop().unwrap();
+                        self.stack.truncate(call_frame.stack_offset);
+                        self.push(result);
+                    },
+                }
+            },
+            Value::BoundMethod(instance, function) => {
+                if function.as_ref().arity() != call_arity {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        format!("Invalid number of arguments, got {} but expected {}.", call_arity, function.as_ref().arity()),
+                        "Make sure that you are passing the correct number of arguments to the function."
+                    ));
+                }
+
+                if let Function::Closure { .. } = function.as_ref() {
+                    let self_idx = self.stack.len() - call_arity - 1;
+                    self.stack[self_idx] = Value::Instance(instance);
+                    self.frames.push(Frame::call(function, self.stack.len(), fast_call));
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Attempted to call a non-closure bound method.",
+                        "Make sure that you are calling a closure bound method."
+                    ));
+                }
+            }
+            Value::Class(class) => {
+                let instance = self.gc.alloc(Instance::new(class));
+
+                if let Some(init) = class.as_ref().methods.get("init") {
+                    if init.as_ref().arity() != call_arity {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Invalid number of arguments, got {} but expected {}.", call_arity, init.as_ref().arity()),
+                            "Make sure that you are passing the correct number of arguments to the function."
+                        ));
+                    }
+
+                    // Replace the class reference with the instance reference before invoking the init method
+                    let callee_idx = self.stack.len() - call_arity - 1;
+                    self.stack[callee_idx] = Value::Instance(instance);
+
+                    self.frames.push(Frame::call(*init, self.stack.len(), fast_call));
+                } else if call_arity != 0 {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Attempted to instantiate a class with arguments when no init() function is defined.",
+                        "Make sure that you have a valid init() function defined for the class if you wish to provide initialization arguments."
+                    ));
+                } else {
+                    // Remove the class reference and "this" from the stack as we would if we actually ran the function
+                    self.stack.truncate(self.stack.len() - 2);
+                    self.push(Value::Instance(instance));
+                }
+
+                self.collect();
+            },
+            non_function_value => {
+                return Err(errors::runtime(
+                    frame.last_location(),
+                    format!("Attempted to call a non-function value '{}'.", non_function_value),
+                    "Make sure that you are attempting to call a function and not another type of value."
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     fn close_upvalues(&mut self, stack_top: usize) -> Result<(), LoxError> {

@@ -12,6 +12,7 @@ pub struct Frame {
     pub upvalues: Vec<Alloc<Upvalue>>,
     pub stack_offset: usize,
     pub ip: usize,
+    pub fast_call: bool,
 }
 
 impl Frame {
@@ -36,6 +37,7 @@ impl Frame {
             upvalues,
             stack_offset: 0,
             ip: 0,
+            fast_call: true,
         }
     }
 
@@ -46,10 +48,11 @@ impl Frame {
             upvalues: Vec::new(),
             stack_offset: 0,
             ip: 0,
+            fast_call: true,
         }
     }
 
-    pub fn call(fun: Alloc<Function>, stack_size: usize) -> Self {
+    pub fn call(fun: Alloc<Function>, stack_size: usize, fast_call: bool) -> Self {
         match fun.as_ref() {
             Function::Native { name, arity, .. } => {
                 Frame {
@@ -58,6 +61,7 @@ impl Frame {
                     upvalues: Vec::new(),
                     stack_offset: stack_size - *arity - 1,
                     ip: 0,
+                    fast_call,
                 }
             }
             Function::Closure { name, arity, upvalues, chunk } => {
@@ -67,6 +71,7 @@ impl Frame {
                     upvalues: upvalues.to_vec(),
                     stack_offset: stack_size - *arity - 1,
                     ip: 0,
+                    fast_call,
                 }
             }
         }
