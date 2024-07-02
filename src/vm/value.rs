@@ -14,7 +14,7 @@ pub enum Value {
     Pointer(Alloc<Value>),
     Function(Rc<Function>),
     Class(Rc<Class>),
-    Instance(Instance),
+    Instance(Alloc<Instance>),
 }
 
 impl Value {
@@ -33,7 +33,7 @@ impl Collectible for Value {
             Value::Pointer(p) => gc.mark(*p),
             Value::Function(f) => f.mark(gc),
             Value::Class(c) => c.mark(gc),
-            Value::Instance(i) => i.mark(gc),
+            Value::Instance(i) => gc.mark(*i),
             _ => {}
         }
     }
@@ -83,10 +83,10 @@ impl Display for Value {
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
             Value::Primitive(p) => write!(f, "{}", p),
-            Value::Pointer(p) => write!(f, "{}", p),
+            Value::Pointer(p) => write!(f, "{}", p.as_ref()),
             Value::Function(fun) => write!(f, "{}", fun),
             Value::Class(c) => write!(f, "{}", c),
-            Value::Instance(i) => write!(f, "{}", i),
+            Value::Instance(i) => write!(f, "{}", i.as_ref()),
         }
     }
 }

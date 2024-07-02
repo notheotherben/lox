@@ -17,6 +17,9 @@ pub enum OpCode {
 
     GetLocal(usize),
     SetLocal(usize),
+
+    GetProperty(usize),
+    SetProperty(usize),
     
     Add,
     Subtract,
@@ -64,6 +67,9 @@ impl Display for OpCode {
 
             OpCode::GetLocal(..) => write!(f, "OP_GET_LOCAL"),
             OpCode::SetLocal(..) => write!(f, "OP_SET_LOCAL"),
+
+            OpCode::GetProperty(..) => write!(f, "OP_GET_PROPERTY"),
+            OpCode::SetProperty(..) => write!(f, "OP_SET_PROPERTY"),
 
             OpCode::Add => write!(f, "OP_ADD"),
             OpCode::Subtract => write!(f, "OP_SUBTRACT"),

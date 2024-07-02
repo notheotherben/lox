@@ -1,6 +1,6 @@
 use std::{fmt::{Debug, Display}, mem::size_of_val, ptr::NonNull};
 
-use super::{value::Upvalue, Value};
+use super::{class::Instance, value::Upvalue, Value};
 
 /// A trait which is implemented by the garbage collector to indicate that it can allocate
 /// certain types of objects.
@@ -27,6 +27,7 @@ pub trait Collectible {
 /// allocated objects, as well as coordinating mark-and-sweep semantics during a GC cycle.
 pub struct GC {
     values: GCPool<Value>,
+    instances: GCPool<Instance>,
     upvalues: GCPool<Upvalue>,
 
     growth_factor: usize,
@@ -67,11 +68,15 @@ impl GC {
     }
 
     pub fn allocated_bytes(&self) -> usize {
-        self.values.allocated_bytes + self.upvalues.allocated_bytes
+        self.values.allocated_bytes + self.instances.allocated_bytes + self.upvalues.allocated_bytes
     }
 
     fn scan(&mut self) {
         while let Some(grey) = self.values.scan_next() {
+            grey.mark(self);
+        }
+
+        while let Some(grey) = self.instances.scan_next() {
             grey.mark(self);
         }
 
@@ -82,6 +87,7 @@ impl GC {
 
     fn sweep(&mut self) {
         self.values.sweep();
+        self.instances.sweep();
         self.upvalues.sweep();
     }
 }
@@ -90,6 +96,7 @@ impl Default for GC {
     fn default() -> Self {
         Self {
             values: Default::default(),
+            instances: Default::default(),
             upvalues: Default::default(),
             growth_factor: 2,
             checkpoint: 1024,
@@ -105,6 +112,16 @@ impl Allocator<Value> for GC {
 
     fn mark(&mut self, object: Alloc<Value>) {
         self.values.mark(object);
+    }
+}
+
+impl Allocator<Instance> for GC {
+    fn alloc(&mut self, value: Instance) -> Alloc<Instance> {
+        self.instances.alloc(value)
+    }
+
+    fn mark(&mut self, object: Alloc<Instance>) {
+        self.instances.mark(object);
     }
 }
 
@@ -235,6 +252,10 @@ impl<T: Display> Display for Alloc<T> {
 impl<T: Collectible> Collectible for Alloc<T> {
     fn mark(&self, gc: &mut GC) {
         self.as_ref().mark(gc);
+    }
+
+    fn size(&self) -> usize {
+        self.as_ref().size()
     }
 }
 

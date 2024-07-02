@@ -3,7 +3,7 @@ use std::{collections::HashMap, mem::size_of};
 use std::rc::Rc;
 use std::fmt::Display;
 
-use super::{Alloc, Collectible, Function, Value};
+use super::{Alloc, Allocator, Collectible, Function, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
@@ -59,12 +59,21 @@ pub struct Instance {
     pub fields: HashMap<String, Alloc<Value>>,
 }
 
+impl Instance {
+    pub fn new(class: Rc<Class>) -> Self {
+        Self {
+            class,
+            fields: HashMap::new(),
+        }
+    }
+}
+
 impl Collectible for Instance {
     fn mark(&self, gc: &mut super::GC) {
         self.class.mark(gc);
 
         for field in self.fields.values() {
-            field.mark(gc);
+            gc.mark(*field);
         }
     }
 

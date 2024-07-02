@@ -189,8 +189,12 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         Ok(())
     }
 
-    fn visit_get(&mut self, _obj: &Expr, _property: &Token) -> Result<(), LoxError> {
-        todo!()
+    fn visit_get(&mut self, obj: &Expr, property: &Token) -> Result<(), LoxError> {
+        self.visit_expr(obj)?;
+
+        let prop = self.identifier(property.lexeme());
+        self.chunk_mut().write(OpCode::GetProperty(prop), property.location());
+        Ok(())
     }
 
     fn visit_fun_expr(
@@ -278,8 +282,13 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         Ok(())
     }
 
-    fn visit_set(&mut self, _obj: &Expr, _property: &Token, _value: &Expr) -> Result<(), LoxError> {
-        todo!()
+    fn visit_set(&mut self, obj: &Expr, property: &Token, value: &Expr) -> Result<(), LoxError> {
+        self.visit_expr(obj)?;
+        self.visit_expr(value)?;
+
+        let prop = self.identifier(property.lexeme());
+        self.chunk_mut().write(OpCode::SetProperty(prop), property.location());
+        Ok(())
     }
 
     fn visit_super(&mut self, _loc: &Loc, _method: &Token) -> Result<(), LoxError> {

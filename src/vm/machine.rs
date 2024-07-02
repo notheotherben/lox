@@ -2,7 +2,7 @@ use std::{collections::{HashMap, LinkedList}, fmt::Debug, rc::Rc, time::SystemTi
 
 use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
 
-use super::{gc::{Alloc, Allocator}, value::Upvalue, Class, Collectible, Frame, Function, Value, GC};
+use super::{class::Instance, gc::{Alloc, Allocator}, value::Upvalue, Class, Collectible, Frame, Function, Value, GC};
 
 pub struct VM {
     debug: bool,
@@ -230,10 +230,10 @@ impl VM {
                     }
                 } else {
                     return Err(errors::runtime(
-                    frame.last_location(),
-                    "Invalid constant index in byte code.",
-                    "Make sure that you are passing valid constant indices to the virtual machine."
-                ));
+                        frame.last_location(),
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ));
                 }
             }
             OpCode::SetGlobal(idx) => {
@@ -335,6 +335,65 @@ impl VM {
                 }
             }
 
+            OpCode::GetProperty(idx) => {
+                if let Some(Primitive::String(key)) = frame.constant(idx) {
+                    let key = key.clone();
+
+                    match self.pop()? {
+                        Value::Instance(instance) => {
+                            if let Some(value) = instance.as_ref().fields.get(&key) {
+                                self.stack.push(value.cloned());
+                            } else {
+                                return Err(errors::runtime(
+                                    frame.last_location(),
+                                    format!("Property '{}' not found on instance.", key),
+                                    "Make sure that you are accessing valid properties on instances."
+                                ));
+                            }
+                        },
+                        value => {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Attempted to get a property from a non-instance value '{}'.", value),
+                                "Make sure that you are accessing properties on instances."
+                            ));
+                        }
+                    }
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ));
+                }
+            }
+            OpCode::SetProperty(idx) => {
+                if let Some(Primitive::String(key)) = frame.constant(idx) {
+                    let key = key.clone();
+
+                    let value = self.pop()?;
+                    match self.pop()? {
+                        Value::Instance(mut instance) => {
+                            instance.as_mut().fields.insert(key, self.gc.alloc(value.clone()));
+                            self.push(value);
+                        },
+                        value => {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Attempted to set a property on a non-instance value '{}'.", value),
+                                "Make sure that you are setting properties on instances."
+                            ));
+                        }
+                    }
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ));
+                }
+            }
+
             OpCode::Add => {
                 let right = self.pop()?;
                 let left = self.pop()?;
@@ -432,6 +491,11 @@ impl VM {
                                 self.push(result);
                             },
                         }
+                    },
+                    Some(Value::Class(class)) => {
+                        let instance = self.gc.alloc(Instance::new(class.clone()));
+                        self.push(Value::Instance(instance));
+                        self.collect();
                     },
                     Some(non_function_value) => {
                         return Err(errors::runtime(
