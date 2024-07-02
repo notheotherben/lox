@@ -1,6 +1,7 @@
-use std::{fmt::{Debug, Display}, mem::size_of_val, ptr::NonNull};
+use std::{fmt::{Debug, Display}, mem::{size_of, size_of_val}, ptr::NonNull};
 
-use super::{class::Instance, value::Upvalue, Value};
+
+use super::{class::{Class, Instance}, Function, value::Upvalue, Value};
 
 /// A trait which is implemented by the garbage collector to indicate that it can allocate
 /// certain types of objects.
@@ -9,13 +10,12 @@ use super::{class::Instance, value::Upvalue, Value};
 /// reachable during the garbage collection process.
 pub trait Allocator<T: Collectible> {
     fn alloc(&mut self, value: T) -> Alloc<T>;
-    fn mark(&mut self, object: Alloc<T>);
 }
 
 /// A trait which is implemented by types that can be marked as reachable during the garbage
 /// collection process and later garbage collected.
 pub trait Collectible {
-    fn mark(&self, gc: &mut GC);
+    fn gc(&self);
     fn size(&self) -> usize {
         size_of_val(self)
     }
@@ -27,6 +27,8 @@ pub trait Collectible {
 /// allocated objects, as well as coordinating mark-and-sweep semantics during a GC cycle.
 pub struct GC {
     values: GCPool<Value>,
+    functions: GCPool<Function>,
+    classes: GCPool<Class>,
     instances: GCPool<Instance>,
     upvalues: GCPool<Upvalue>,
 
@@ -37,7 +39,7 @@ pub struct GC {
 impl GC {
     pub fn collect<M>(&mut self, marker: M) -> Option<GCStats>
     where
-        M: FnOnce(&mut GC),
+        M: FnOnce(),
     {
         if self.allocated_bytes() >= self.checkpoint {
             let stats = self.force_collect(marker);
@@ -47,15 +49,16 @@ impl GC {
         }
     }
 
-    pub fn force_collect<M>(&mut self, marker: M) -> GCStats
+    pub fn force_collect<M>(&mut self, scanner: M) -> GCStats
     where
-        M: FnOnce(&mut GC),
+        M: FnOnce(),
     {
         let size_before = self.allocated_bytes();
 
-        marker(self);
+        scanner();
 
-        self.scan();
+        //#[cfg(debug)]
+        self.debug_sweep();
 
         self.sweep();
 
@@ -68,25 +71,25 @@ impl GC {
     }
 
     pub fn allocated_bytes(&self) -> usize {
-        self.values.allocated_bytes + self.instances.allocated_bytes + self.upvalues.allocated_bytes
+        self.values.allocated_bytes +
+        self.functions.allocated_bytes +
+        self.classes.allocated_bytes +
+        self.instances.allocated_bytes +
+        self.upvalues.allocated_bytes
     }
 
-    fn scan(&mut self) {
-        while let Some(grey) = self.values.scan_next() {
-            grey.mark(self);
-        }
-
-        while let Some(grey) = self.instances.scan_next() {
-            grey.mark(self);
-        }
-
-        while let Some(grey) = self.upvalues.scan_next() {
-            grey.mark(self);
-        }
+    fn debug_sweep(&self) {
+        self.values.debug_sweep();
+        self.functions.debug_sweep();
+        self.classes.debug_sweep();
+        self.instances.debug_sweep();
+        self.upvalues.debug_sweep();
     }
 
     fn sweep(&mut self) {
         self.values.sweep();
+        self.functions.sweep();
+        self.classes.sweep();
         self.instances.sweep();
         self.upvalues.sweep();
     }
@@ -96,6 +99,8 @@ impl Default for GC {
     fn default() -> Self {
         Self {
             values: Default::default(),
+            functions: Default::default(),
+            classes: Default::default(),
             instances: Default::default(),
             upvalues: Default::default(),
             growth_factor: 2,
@@ -109,9 +114,17 @@ impl Allocator<Value> for GC {
     fn alloc(&mut self, value: Value) -> Alloc<Value> {
         self.values.alloc(value)
     }
+}
 
-    fn mark(&mut self, object: Alloc<Value>) {
-        self.values.mark(object);
+impl Allocator<Function> for GC {
+    fn alloc(&mut self, value: Function) -> Alloc<Function> {
+        self.functions.alloc(value)
+    }
+}
+
+impl Allocator<Class> for GC {
+    fn alloc(&mut self, value: Class) -> Alloc<Class> {
+        self.classes.alloc(value)
     }
 }
 
@@ -119,19 +132,11 @@ impl Allocator<Instance> for GC {
     fn alloc(&mut self, value: Instance) -> Alloc<Instance> {
         self.instances.alloc(value)
     }
-
-    fn mark(&mut self, object: Alloc<Instance>) {
-        self.instances.mark(object);
-    }
 }
 
 impl Allocator<Upvalue> for GC {
     fn alloc(&mut self, value: Upvalue) -> Alloc<Upvalue> {
         self.upvalues.alloc(value)
-    }
-
-    fn mark(&mut self, object: Alloc<Upvalue>) {
-        self.upvalues.mark(object);
     }
 }
 
@@ -163,99 +168,111 @@ impl Display for GCStats {
 }
 
 /// A wrapper around an `AllocRef` which provides a safe interface to the underlying allocation.
-pub struct Alloc<T>(NonNull<Allocation<T>>);
+pub struct Alloc<T: Collectible>(NonNull<Allocation<T>>);
 
-impl<T> Alloc<T> {
+impl<T: Collectible> Alloc<T> {
+    pub fn ptr_eq(self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+
     pub fn replace_value(&self, value: T) {
         unsafe { (*self.0.as_ptr()).value = value };
     }
 }
 
-impl<T: Copy> Alloc<T> {
+impl<T: Collectible + Copy> Alloc<T> {
     pub fn copied(&self) -> T {
         unsafe { self.0.as_ref().value }
     }
 }
 
-impl<T: Clone> Alloc<T> {
+impl<T: Collectible + Clone> Alloc<T> {
     pub fn cloned(&self) -> T {
         unsafe { self.0.as_ref().value.clone() }
     }
 }
 
-impl<T> Copy for Alloc<T> {}
+impl<T: Collectible> Copy for Alloc<T> {}
 
-impl<T> Clone for Alloc<T> {
+impl<T: Collectible> Clone for Alloc<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> AsRef<T> for Alloc<T> {
+impl<T: Collectible> AsRef<T> for Alloc<T> {
     fn as_ref(&self) -> &T {
         unsafe { &self.0.as_ref().value }
     }
 }
 
-impl<T> AsMut<T> for Alloc<T> {
+impl<T: Collectible> AsMut<T> for Alloc<T> {
     fn as_mut(&mut self) -> &mut T {
         unsafe { &mut (*self.0.as_ptr()).value }
     }
 }
 
-impl<T: PartialEq> PartialEq for Alloc<T> {
+impl<T: Collectible + PartialEq> PartialEq for Alloc<T> {
     fn eq(&self, other: &Self) -> bool {
         self.as_ref() == other.as_ref()
     }
 }
 
-impl<T: PartialEq<T>> PartialEq<T> for Alloc<T> {
+impl<T: Collectible + PartialEq<T>> PartialEq<T> for Alloc<T> {
     fn eq(&self, other: &T) -> bool {
         self.as_ref() == other
     }
 }
 
-impl<T: Eq> Eq for Alloc<T> {}
+impl<T: Collectible + Eq> Eq for Alloc<T> {}
 
-impl<T: PartialOrd> PartialOrd for Alloc<T> {
+impl<T: Collectible + PartialOrd> PartialOrd for Alloc<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.as_ref().partial_cmp(other.as_ref())
     }
 }
 
-impl<T: Ord> PartialOrd<T> for Alloc<T> {
+impl<T: Collectible + Ord> PartialOrd<T> for Alloc<T> {
     fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
         self.as_ref().partial_cmp(other)
     }
 }
 
-impl<T: Ord> Ord for Alloc<T> {
+impl<T: Collectible + Ord> Ord for Alloc<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.as_ref().cmp(other.as_ref())
     }
 }
 
-impl<T: Debug> Debug for Alloc<T> {
+impl<T: Collectible + Debug> Debug for Alloc<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?} (0x{})", self.as_ref(), self.0.as_ptr() as usize)
     }
 }
 
-impl<T: Display> Display for Alloc<T> {
+impl<T: Collectible + Display> Display for Alloc<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         unsafe {
-            write!(f, "{}{}", if self.0.as_ref().marked { '&' } else { '!' }, self.0.as_ref().value)
+            write!(f, "{}", self.0.as_ref().value)
         }
     }
 }
 
 impl<T: Collectible> Collectible for Alloc<T> {
-    fn mark(&self, gc: &mut GC) {
-        self.as_ref().mark(gc);
+    fn gc(&self) {
+        unsafe {
+            if self.0.as_ref().marked {
+                return;
+            }
+
+            self.as_ref().gc();
+
+            (*self.0.as_ptr()).marked = true;
+        }
     }
 
     fn size(&self) -> usize {
-        self.as_ref().size()
+        size_of::<Self>() + self.as_ref().size()
     }
 }
 
@@ -276,7 +293,6 @@ pub struct Allocation<T> {
 
 struct GCPool<T: Collectible> {
     heap: Option<NonNull<Allocation<T>>>,
-    grey_stack: Vec<Alloc<T>>,
     allocated_bytes: usize,
 }
 
@@ -284,7 +300,6 @@ impl<T: Collectible> Default for GCPool<T> {
     fn default() -> Self {
         Self {
             heap: None,
-            grey_stack: Default::default(),
             allocated_bytes: Default::default(),
         }
     }
@@ -305,15 +320,6 @@ impl<T: Collectible> GCPool<T> {
             self.allocated_bytes += size;
             Alloc(alloc)
         }
-    }
-
-    pub fn mark(&mut self, object: Alloc<T>) {
-        unsafe { (*object.0.as_ptr()).marked = true; }
-        self.grey_stack.push(object);
-    }
-
-    pub fn scan_next(&mut self) -> Option<Alloc<T>> {
-        self.grey_stack.pop()
     }
 
     pub fn sweep(&mut self) {
@@ -351,6 +357,21 @@ impl<T: Collectible> GCPool<T> {
     }
 }
 
+impl<T: Collectible + Debug> GCPool<T> {
+    pub fn debug_sweep(&self) {
+        unsafe {
+            let mut current = self.heap;
+            while let Some(c) = current {
+                if !c.as_ref().marked {
+                    eprintln!("GC: Collecting {:?}", c.as_ref().value);
+                }
+
+                current = c.as_ref().next;
+            }
+        }
+    }
+}
+
 impl<T: Collectible> Drop for GCPool<T> {
     fn drop(&mut self) {
         unsafe {
@@ -377,20 +398,20 @@ mod tests {
         {
             let object = gc.alloc(Value::Number(42.0));
 
-            assert_eq!(gc.force_collect(|gc| {
-                gc.mark(object);
+            assert_eq!(gc.force_collect(|| {
+                object.gc();
             }), GCStats { allocated: size_of::<Value>(), collected: 0 });
 
             let object2 = gc.alloc(Value::Nil);
             assert_eq!(gc.allocated_bytes(), 2 * size_of::<Value>());
 
-            assert_eq!(gc.force_collect(|gc| {
-                gc.mark(object);
-                gc.mark(object2);
+            assert_eq!(gc.force_collect(|| {
+                object.gc();
+                object2.gc();
             }), GCStats { allocated: 2 * size_of::<Value>(), collected: 0 });
 
-            assert_eq!(gc.force_collect(|gc| {
-                gc.mark(object);
+            assert_eq!(gc.force_collect(|| {
+                object.gc();
             }), GCStats { allocated: size_of::<Value>(), collected: size_of::<Value>() });
 
             assert_eq!(object, Value::Number(42.0));
@@ -398,7 +419,7 @@ mod tests {
 
         assert_eq!(gc.allocated_bytes(), size_of::<Value>());
 
-        gc.force_collect(|_gc| {});
+        gc.force_collect(|| {});
 
         assert_eq!(gc.allocated_bytes(), 0);
     }
@@ -414,8 +435,8 @@ mod tests {
         object.replace_value(Value::Number(43.0));
         assert_eq!(object, Value::Number(43.0));
 
-        gc.force_collect(|gc| {
-            gc.mark(object);
+        gc.force_collect(|| {
+            object.gc();
         });
 
         assert_eq!(object, Value::Number(43.0));
@@ -439,15 +460,15 @@ mod tests {
         assert!(matches!(object_copy.as_ref(), Upvalue::Closed(_)));
         assert!(matches!(object_clone.as_ref(), Upvalue::Closed(_)));
 
-        gc.force_collect(|gc| {
-            gc.mark(object);
+        gc.force_collect(|| {
+            object.gc();
         });
 
         assert!(matches!(object.as_ref(), Upvalue::Closed(v) if matches!(v.as_ref(), Value::Number(42.0))));
         assert!(matches!(object_copy.as_ref(), Upvalue::Closed(v) if matches!(v.as_ref(), Value::Number(42.0))));
         assert!(matches!(object_clone.as_ref(), Upvalue::Closed(v) if matches!(v.as_ref(), Value::Number(42.0))));
 
-        gc.force_collect(|_gc| {});
+        gc.force_collect(|| {});
 
         assert_eq!(gc.allocated_bytes(), 0);
     }

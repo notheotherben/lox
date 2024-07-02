@@ -4,7 +4,7 @@ use std::{
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{gc::Allocator, value::Upvalue, Alloc, Collectible, Value, VM};
+use super::{value::Upvalue, Alloc, Collectible, Value, VM};
 
 #[derive(Clone)]
 pub enum Function {
@@ -25,10 +25,10 @@ pub enum Function {
 impl Function {
     pub fn capture<C: FnMut(&[VarRef]) -> Result<Vec<Alloc<Upvalue>>, LoxError>>(fun: &CFunction, mut capture: C) -> Result<Self, LoxError> {
         Ok(Function::Closure {
-                name: fun.name.clone(),
-                arity: fun.arity,
-                upvalues: capture(&fun.upvalues)?,
-                chunk: fun.chunk.clone(),
+            name: fun.name.clone(),
+            arity: fun.arity,
+            upvalues: capture(&fun.upvalues)?,
+            chunk: fun.chunk.clone(),
         })
     }
     
@@ -53,12 +53,12 @@ impl Function {
 }
 
 impl Collectible for Function {
-    fn mark(&self, gc: &mut super::GC) {
+    fn gc(&self) {
         match self {
             Function::Native { .. } => {},
             Function::Closure { upvalues, .. } => {
                 for upvalue in upvalues.iter() {
-                    gc.mark(*upvalue);
+                    upvalue.gc();
                 }
             },
         }

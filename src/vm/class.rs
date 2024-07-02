@@ -3,13 +3,13 @@ use std::{collections::HashMap, mem::size_of};
 use std::rc::Rc;
 use std::fmt::Display;
 
-use super::{Alloc, Allocator, Collectible, Function, Value};
+use super::{Alloc, Collectible, Function, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     pub name: Rc<String>,
-    pub statics: HashMap<String, Rc<Function>>,
-    pub methods: HashMap<String, Rc<Function>>,
+    pub statics: HashMap<String, Alloc<Function>>,
+    pub methods: HashMap<String, Alloc<Function>>,
 }
 
 impl Class {
@@ -23,13 +23,13 @@ impl Class {
 }
 
 impl Collectible for Class {
-    fn mark(&self, gc: &mut super::GC) {
+    fn gc(&self) {
         for fun in self.methods.values() {
-            fun.mark(gc);
+            fun.gc();
         }
         
         for fun in self.statics.values() {
-            fun.mark(gc);
+            fun.gc();
         }
     }
 
@@ -55,12 +55,12 @@ impl Display for Class {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
-    pub class: Rc<Class>,
+    pub class: Alloc<Class>,
     pub fields: HashMap<String, Alloc<Value>>,
 }
 
 impl Instance {
-    pub fn new(class: Rc<Class>) -> Self {
+    pub fn new(class: Alloc<Class>) -> Self {
         Self {
             class,
             fields: HashMap::new(),
@@ -69,11 +69,11 @@ impl Instance {
 }
 
 impl Collectible for Instance {
-    fn mark(&self, gc: &mut super::GC) {
-        self.class.mark(gc);
+    fn gc(&self) {
+        self.class.gc();
 
         for field in self.fields.values() {
-            gc.mark(*field);
+            field.gc();
         }
     }
 

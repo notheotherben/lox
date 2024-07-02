@@ -49,7 +49,7 @@ impl Frame {
         }
     }
 
-    pub fn call(fun: Rc<Function>, stack_size: usize) -> Self {
+    pub fn call(fun: Alloc<Function>, stack_size: usize) -> Self {
         match fun.as_ref() {
             Function::Native { name, arity, .. } => {
                 Frame {
@@ -107,9 +107,9 @@ impl Debug for Frame {
 }
 
 impl Collectible for Frame {
-    fn mark(&self, gc: &mut GC) {
+    fn gc(&self) {
         for upvalue in self.upvalues.iter() {
-            gc.mark(*upvalue);
+            upvalue.gc();
         }
     }
 }

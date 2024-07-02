@@ -1,8 +1,8 @@
-use std::{fmt::Display, mem::{size_of, size_of_val}, rc::Rc};
+use std::{fmt::Display, mem::{size_of, size_of_val}};
 
 use crate::compiler::Primitive;
 
-use super::{gc::{Allocator, GC}, Alloc, Class, Collectible, Function, Instance};
+use super::{Alloc, Class, Collectible, Function, Instance};
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -12,9 +12,10 @@ pub enum Value {
     String(String),
     Primitive(Primitive),
     Pointer(Alloc<Value>),
-    Function(Rc<Function>),
-    Class(Rc<Class>),
+    Function(Alloc<Function>),
+    Class(Alloc<Class>),
     Instance(Alloc<Instance>),
+    BoundMethod(Alloc<Instance>, Alloc<Function>)
 }
 
 impl Value {
@@ -28,12 +29,16 @@ impl Value {
 }
 
 impl Collectible for Value {
-    fn mark(&self, gc: &mut GC) {
+    fn gc(&self) {
         match self {
-            Value::Pointer(p) => gc.mark(*p),
-            Value::Function(f) => f.mark(gc),
-            Value::Class(c) => c.mark(gc),
-            Value::Instance(i) => gc.mark(*i),
+            Value::Pointer(p) => p.gc(),
+            Value::Function(f) => f.gc(),
+            Value::Class(c) => c.gc(),
+            Value::Instance(i) => i.gc(),
+            Value::BoundMethod(i, f) => {
+                i.gc();
+                f.gc();
+            },
             _ => {}
         }
     }
@@ -45,6 +50,7 @@ impl Collectible for Value {
             Value::Class(c) => size_of::<Self>() + c.size(),
             Value::Instance(i) => size_of::<Self>() + i.size(),
             Value::String(s) => size_of::<Self>() + size_of_val(s),
+            Value::BoundMethod(i, f) => size_of::<Self>() + i.size() + f.size(),
             _ => size_of::<Self>(),
         }
     }
@@ -57,9 +63,10 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Class(a), Value::Class(b)) => Rc::ptr_eq(a, b),
-            (Value::Instance(a), Value::Instance(b)) => a == b,
-            (Value::Function(a), Value::Function(b)) => Rc::ptr_eq(a, b),
+            (Value::Class(a), Value::Class(b)) => a.ptr_eq(b),
+            (Value::Instance(a), Value::Instance(b)) => a.ptr_eq(b),
+            (Value::Function(a), Value::Function(b)) => a.ptr_eq(b),
+            (Value::BoundMethod(ai, af), Value::BoundMethod(bi, bf)) => ai.ptr_eq(bi) && af.ptr_eq(bf),
             _ => false
         }
     }
@@ -87,6 +94,7 @@ impl Display for Value {
             Value::Function(fun) => write!(f, "{}", fun),
             Value::Class(c) => write!(f, "{}", c),
             Value::Instance(i) => write!(f, "{}", i.as_ref()),
+            Value::BoundMethod(_i, fun) => write!(f, "{}", fun.as_ref())
         }
     }
 }
@@ -104,9 +112,9 @@ impl Alloc<Upvalue> {
 }
 
 impl Collectible for Upvalue {
-    fn mark(&self, gc: &mut GC) {
+    fn gc(&self) {
         if let Upvalue::Closed(closed) = self { 
-            gc.mark(*closed);
+            closed.gc();
         }
     }
 }

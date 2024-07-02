@@ -40,7 +40,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
         "Make sure that the file is a valid UTF-8 file.",
     ))?;
 
-    eprintln!("{}", content);
+    println!("{}", content);
 
     let expected_output = extract_expected_output(content);
 
@@ -120,3 +120,7 @@ mod lang {
 
     include!(concat!(env!("OUT_DIR"), "/tests/lang.rs"));
 }
+
+
+#[test]
+fn lang_this_closure() { run_file("tests/lang/this/closure.lox").expect("no errors") }

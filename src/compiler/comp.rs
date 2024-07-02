@@ -1,11 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{Expr, ExprVisitor, Literal, Stmt, StmtVisitor},
-    errors,
-    lexer::Token,
-    compiler::{Chunk, Function, OpCode, VarRef, Primitive},
-    Loc, LoxError,
+    ast::{Expr, ExprVisitor, FunType, Literal, Stmt, StmtVisitor}, compiler::{Chunk, Function, OpCode, Primitive, VarRef}, errors, lexer::Token, Loc, LoxError
 };
 
 struct Local {
@@ -22,6 +18,7 @@ struct CompilerState {
     pub locals: Vec<Local>,
     pub upvalues: Vec<VarRef>,
     pub stack_depth: usize,
+    pub fun_type: Option<FunType>,
 
     pub break_targets: Vec<usize>,
 }
@@ -78,11 +75,13 @@ impl Compiler {
         *index
     }
 
-    fn define_local(&mut self, name: &Token) {
+    fn define_local(&mut self, name: &Token) -> usize {
         self.state_mut().locals.push(Local{
             token: name.clone(),
             captured: false,
         });
+
+        self.state().locals.len() - 1
     }
 
     fn add_upvalue(&mut self, up: VarRef, offset: usize) -> usize {
@@ -203,9 +202,12 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         params: &[Token],
         body: &[Stmt],
     ) -> Result<(), LoxError> {
-        self.states.push(CompilerState::default());
+        self.states.push(CompilerState {
+            fun_type: Some(FunType::Closure),
+            ..CompilerState::default()
+        });
 
-        self.define_local(&Token::This(loc.clone()));
+        self.define_local(&Token::Identifier(loc.clone(), "".to_string()));
 
         for param in params {
             self.define_local(param);
@@ -213,7 +215,11 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
 
         self.visit_block(body)?;
 
-        let comp = self.states.pop().unwrap();
+        let mut comp = self.states.pop().unwrap();
+
+        // Implicit return (nil)
+        comp.chunk.write(OpCode::Nil, Loc::Unknown);
+        comp.chunk.write(OpCode::Return, Loc::Unknown);
 
         let ptr = self.chunk_mut().add_constant(Primitive::Function(Function::new(
             format!("anonymous@{}", loc),
@@ -295,8 +301,18 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         todo!()
     }
 
-    fn visit_this(&mut self, _loc: &Loc) -> Result<(), LoxError> {
-        todo!()
+    fn visit_this(&mut self, loc: &Loc) -> Result<(), LoxError> {
+        let token = Token::This(loc.clone());
+
+        if self.states.iter().rev().any(|state| matches!(state.fun_type, Some(FunType::Method | FunType::Initializer))) {
+            self.visit_var_ref(&token)
+        } else {
+            Err(errors::language(
+                loc.clone(),
+                "Cannot use `this` outside of a class method.",
+                "You can only use `this` within a class method.",
+            ))
+        }
     }
 
     fn visit_unary(&mut self, op: &Token, expr: &Expr) -> Result<(), LoxError> {
@@ -371,12 +387,22 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         name: &Token,
         _superclass: Option<&Expr>,
         _statics: &[Stmt],
-        _methods: &[Stmt],
+        methods: &[Stmt],
     ) -> Result<(), LoxError> {
         let name_const = self.identifier(name.lexeme());
-        self.define_local(name);
+        let class_name = self.define_local(name);
 
         self.chunk_mut().write(OpCode::Class(name_const), name.location());
+
+        if !methods.is_empty() {
+            self.chunk_mut().write(OpCode::GetLocal(class_name), Loc::Native);
+
+            for method in methods {
+                self.visit_stmt(method)?;
+            }
+
+            self.chunk_mut().write(OpCode::Pop, Loc::Native);
+        }
 
         Ok(())
     }
@@ -389,14 +415,21 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
     fn visit_fun_def(
         &mut self,
-        _ty: crate::ast::FunType,
+        ty: crate::ast::FunType,
         name: &Token,
         params: &[Token],
         body: &[Stmt],
     ) -> Result<(), LoxError> {
-        self.states.push(CompilerState::default());
+        self.states.push(CompilerState {
+            fun_type: Some(ty),
+            ..CompilerState::default()
+        });
 
-        self.define_local(&Token::This(name.location()));
+        if matches!(ty, FunType::Closure) {
+            self.define_local(&Token::Identifier(name.location(), "".to_string()));
+        } else {
+            self.define_local(&Token::This(name.location()));
+        }
 
         for param in params {
             self.define_local(param);
@@ -406,8 +439,12 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
 
         let mut comp = self.states.pop().unwrap();
 
-        // Implicit return (nil)
-        comp.chunk.write(OpCode::Nil, Loc::Unknown);
+        // Implicit return nil or the instance depending on the function type
+        if matches!(ty, FunType::Initializer) {
+            comp.chunk.write(OpCode::GetLocal(0), Loc::Unknown);
+        } else {
+            comp.chunk.write(OpCode::Nil, Loc::Unknown);
+        }
         comp.chunk.write(OpCode::Return, Loc::Unknown);
 
         let ident = self.identifier(name.lexeme());
@@ -419,8 +456,12 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
             comp.chunk,
         )));
         self.chunk_mut().write(OpCode::Closure(ptr), name.location());
-        self.chunk_mut()
-            .write(OpCode::DefineGlobal(ident), name.location());
+
+        match ty {
+            FunType::Closure => self.chunk_mut().write(OpCode::DefineGlobal(ident), name.location()),
+            FunType::Method => self.chunk_mut().write(OpCode::Method(ident), name.location()),
+            FunType::Initializer => self.chunk_mut().write(OpCode::Method(ident), name.location()),
+        };
 
         Ok(())
     }
@@ -471,8 +512,18 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> Result<(), LoxError> {
+        if matches!(self.state().fun_type, Some(FunType::Initializer)) && expr.is_some() {
+            return Err(errors::language(
+                token.location(),
+                "Cannot return a value from an initializer.",
+                "Remove the return statement inside your init() function.",
+            ));
+        }
+
         if let Some(expr) = expr {
             self.visit_expr(expr)?;
+        } else if matches!(self.state().fun_type, Some(FunType::Initializer)) {
+            self.chunk_mut().write(OpCode::GetLocal(0), token.location());
         } else {
             self.chunk_mut().write(OpCode::Nil, token.location());
         }
