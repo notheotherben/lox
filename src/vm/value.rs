@@ -1,4 +1,4 @@
-use std::{fmt::Display, rc::Rc};
+use std::{fmt::Display, mem::{size_of, size_of_val}, rc::Rc};
 
 use crate::compiler::Primitive;
 
@@ -35,6 +35,17 @@ impl Collectible for Value {
             Value::Class(c) => c.mark(gc),
             Value::Instance(i) => i.mark(gc),
             _ => {}
+        }
+    }
+
+    fn size(&self) -> usize {
+        match self {
+            Value::Pointer(p) => size_of::<Self>() + p.size(),
+            Value::Function(f) => size_of::<Self>() + f.size(),
+            Value::Class(c) => size_of::<Self>() + c.size(),
+            Value::Instance(i) => size_of::<Self>() + i.size(),
+            Value::String(s) => size_of::<Self>() + size_of_val(s),
+            _ => size_of::<Self>(),
         }
     }
 }
@@ -81,5 +92,20 @@ impl Display for Upvalue {
             Upvalue::Open(index) => write!(f, "open upvalue [{}]", *index),
             Upvalue::Closed(value) => write!(f, "closed upvalue [{}]", value),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::size_of;
+
+    #[test]
+    fn test_value_sizes() {
+        assert_eq!(Value::Nil.size(), size_of::<Value>());
+        assert_eq!(Value::Bool(false).size(), size_of::<Value>());
+        assert_eq!(Value::Number(0.0).size(), size_of::<Value>());
+        assert_eq!(Value::String("test".to_string()).size(), size_of::<Value>() + size_of_val(&"test".to_string()));
+        assert_eq!(Value::Primitive(Primitive::Nil).size(), size_of::<Value>());
     }
 }

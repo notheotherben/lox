@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{Function};
+use super::Function;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Primitive {

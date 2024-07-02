@@ -1,6 +1,5 @@
 use std::{
-    fmt::{Debug, Display},
-    rc::Rc,
+    fmt::{Debug, Display}, mem::{size_of, size_of_val}, rc::Rc
 };
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
@@ -62,6 +61,13 @@ impl Collectible for Function {
                     gc.mark(*upvalue);
                 }
             },
+        }
+    }
+
+    fn size(&self) -> usize {
+        match self {
+            Function::Native { .. } => size_of::<Self>(),
+            Function::Closure { name, upvalues, .. } => size_of::<Self>() + size_of_val(name) + size_of_val(upvalues),
         }
     }
 }

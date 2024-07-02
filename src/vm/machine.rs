@@ -102,7 +102,7 @@ impl VM {
     }
 
     fn collect(&mut self) {
-        self.gc.collect(|gc| {
+        if let Some(stats) = self.gc.collect(|gc| {
             for slot in self.stack.iter() {
                 slot.mark(gc);
             }
@@ -118,7 +118,11 @@ impl VM {
             for v in self.globals.values() {
                 gc.mark(*v);
             }
-        });
+        }) {
+            if self.debug {
+                eprintln!("{}", stats);
+            }
+        }
     }
 
     fn run(&mut self) -> Result<(), LoxError> {
@@ -472,6 +476,7 @@ impl VM {
                             Ok(upvalues)
                         })?;
                         self.push(Value::Function(Rc::new(closure)));
+                        self.collect();
                     },
                     _ => {
                         return Err(errors::runtime(
@@ -484,6 +489,7 @@ impl VM {
             OpCode::CloseUpvalue => {
                 self.close_upvalues(self.stack.len() - 1)?;
                 self.pop()?;
+                self.collect();
             },
             OpCode::Return => {
                 let result = self.pop()?;
@@ -495,6 +501,7 @@ impl VM {
                 }
 
                 self.push(result);
+                self.collect();
             },
 
             OpCode::Class(name) => {

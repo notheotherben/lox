@@ -1,4 +1,4 @@
-use std::{fmt::{Debug, Display}, ptr::NonNull};
+use std::{fmt::{Debug, Display}, mem::size_of_val, ptr::NonNull};
 
 use super::{value::Upvalue, Value};
 
@@ -16,32 +16,57 @@ pub trait Allocator<T: Collectible> {
 /// collection process and later garbage collected.
 pub trait Collectible {
     fn mark(&self, gc: &mut GC);
+    fn size(&self) -> usize {
+        size_of_val(self)
+    }
 }
 
 /// The garbage collector which is responsible for managing the memory of the virtual machine.
 ///
 /// The `GC` struct is responsible for holding and maintaining the various GC pools containing
 /// allocated objects, as well as coordinating mark-and-sweep semantics during a GC cycle.
-#[derive(Default)]
 pub struct GC {
     values: GCPool<Value>,
     upvalues: GCPool<Upvalue>,
+
+    growth_factor: usize,
+    checkpoint: usize,
 }
 
 impl GC {
-    pub fn collect<M>(&mut self, marker: M)
+    pub fn collect<M>(&mut self, marker: M) -> Option<GCStats>
     where
         M: FnOnce(&mut GC),
     {
+        if self.allocated_bytes() >= self.checkpoint {
+            let stats = self.force_collect(marker);
+            self.checkpoint = self.allocated_bytes() + self.growth_factor;
+            Some(stats)
+        } else {
+            None
+        }
+    }
+
+    pub fn force_collect<M>(&mut self, marker: M) -> GCStats
+    where
+        M: FnOnce(&mut GC),
+    {
+        let size_before = self.allocated_bytes();
+
         marker(self);
 
         self.scan();
 
         self.sweep();
+
+        GCStats {
+            allocated: self.allocated_bytes(),
+            collected: size_before - self.allocated_bytes(),
+        }
     }
 
-    pub fn size(&self) -> usize {
-        self.values.size + self.upvalues.size
+    pub fn allocated_bytes(&self) -> usize {
+        self.values.allocated_bytes + self.upvalues.allocated_bytes
     }
 
     fn scan(&mut self) {
@@ -58,6 +83,18 @@ impl GC {
         self.values.sweep();
         self.upvalues.sweep();
     }
+}
+
+impl Default for GC {
+    fn default() -> Self {
+        Self {
+            values: Default::default(),
+            upvalues: Default::default(),
+            growth_factor: 2,
+            checkpoint: 1024,
+        }
+    }
+
 }
 
 impl Allocator<Value> for GC {
@@ -77,6 +114,33 @@ impl Allocator<Upvalue> for GC {
 
     fn mark(&mut self, object: Alloc<Upvalue>) {
         self.upvalues.mark(object);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GCStats {
+    pub allocated: usize,
+    pub collected: usize,
+}
+
+impl Display for GCStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let GCStats { mut allocated, mut collected } = *self;
+        let prefixes = ["", "k", "M", "G"];
+        let mut allocated_prefix = 0;
+        let mut collected_prefix = 0;
+
+        while allocated >= 1024 && allocated_prefix < prefixes.len() - 1{
+            allocated /= 1024;
+            allocated_prefix += 1;
+        }
+
+        while collected >= 1024 && collected_prefix < prefixes.len() - 1{
+            collected /= 1024;
+            collected_prefix += 1;
+        }
+
+        write!(f, "GC collected {}{}B ({}{}B remaining)", collected, prefixes[collected_prefix], allocated, prefixes[allocated_prefix])
     }
 }
 
@@ -191,7 +255,7 @@ pub struct Allocation<T> {
 struct GCPool<T: Collectible> {
     heap: Option<NonNull<Allocation<T>>>,
     grey_stack: Vec<Alloc<T>>,
-    size: usize,
+    allocated_bytes: usize,
 }
 
 impl<T: Collectible> Default for GCPool<T> {
@@ -199,7 +263,7 @@ impl<T: Collectible> Default for GCPool<T> {
         Self {
             heap: None,
             grey_stack: Default::default(),
-            size: Default::default(),
+            allocated_bytes: Default::default(),
         }
     }
 }
@@ -207,6 +271,7 @@ impl<T: Collectible> Default for GCPool<T> {
 impl<T: Collectible> GCPool<T> {
     pub fn alloc(&mut self, value: T) -> Alloc<T> {
         unsafe {
+            let size = value.size();
             let alloc = NonNull::new_unchecked(Box::into_raw(Box::new(Allocation {
                 value,
                 marked: false,
@@ -215,7 +280,7 @@ impl<T: Collectible> GCPool<T> {
 
             self.heap = Some(alloc);
 
-            self.size += 1;
+            self.allocated_bytes += size;
             Alloc(alloc)
         }
     }
@@ -238,9 +303,10 @@ impl<T: Collectible> GCPool<T> {
                 if !c.as_ref().marked {
                     // If the current object isn't marked, then move to the next object and drop this one
                     current = c.as_ref().next;
+                    let size = c.as_ref().value.size();
                     drop(Box::from_raw(c.as_ptr()));
 
-                    self.size -= 1;
+                    self.allocated_bytes -= size;
                 } else {
                     current = c.as_ref().next;
                     (*c.as_ptr()).marked = false;
@@ -268,8 +334,9 @@ impl<T: Collectible> Drop for GCPool<T> {
         unsafe {
             while let Some(object) = self.heap {
                 self.heap = object.as_ref().next;
+                let size = &object.as_ref().value.size();
                 drop(Box::from_raw(object.as_ptr()));
-                self.size -= 1;
+                self.allocated_bytes -= size;
             }
         }
     }
@@ -277,6 +344,8 @@ impl<T: Collectible> Drop for GCPool<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     use super::*;
 
     #[test]
@@ -285,34 +354,31 @@ mod tests {
 
         {
             let object = gc.alloc(Value::Number(42.0));
-            assert_eq!(gc.size(), 1);
 
-            gc.collect(|gc| {
+            assert_eq!(gc.force_collect(|gc| {
                 gc.mark(object);
-            });
+            }), GCStats { allocated: size_of::<Value>(), collected: 0 });
 
             let object2 = gc.alloc(Value::Nil);
-            assert_eq!(gc.size(), 2);
+            assert_eq!(gc.allocated_bytes(), 2 * size_of::<Value>());
 
-            gc.collect(|gc| {
+            assert_eq!(gc.force_collect(|gc| {
                 gc.mark(object);
                 gc.mark(object2);
-            });
-            assert_eq!(gc.size(), 2);
+            }), GCStats { allocated: 2 * size_of::<Value>(), collected: 0 });
 
-            gc.collect(|gc| {
+            assert_eq!(gc.force_collect(|gc| {
                 gc.mark(object);
-            });
+            }), GCStats { allocated: size_of::<Value>(), collected: size_of::<Value>() });
 
             assert_eq!(object, Value::Number(42.0));
-            assert_eq!(object2, Value::Nil);
         }
 
-        assert_eq!(gc.size(), 1);
+        assert_eq!(gc.allocated_bytes(), size_of::<Value>());
 
-        gc.collect(|_gc| {});
+        gc.force_collect(|_gc| {});
 
-        assert_eq!(gc.size(), 0);
+        assert_eq!(gc.allocated_bytes(), 0);
     }
 
     #[test]
@@ -326,7 +392,7 @@ mod tests {
         object.replace_value(Value::Number(43.0));
         assert_eq!(object, Value::Number(43.0));
 
-        gc.collect(|gc| {
+        gc.force_collect(|gc| {
             gc.mark(object);
         });
 
@@ -351,7 +417,7 @@ mod tests {
         assert!(matches!(object_copy.as_ref(), Upvalue::Closed(_)));
         assert!(matches!(object_clone.as_ref(), Upvalue::Closed(_)));
 
-        gc.collect(|gc| {
+        gc.force_collect(|gc| {
             gc.mark(object);
         });
 
@@ -359,8 +425,8 @@ mod tests {
         assert!(matches!(object_copy.as_ref(), Upvalue::Closed(v) if matches!(v.as_ref(), Value::Number(42.0))));
         assert!(matches!(object_clone.as_ref(), Upvalue::Closed(v) if matches!(v.as_ref(), Value::Number(42.0))));
 
-        gc.collect(|_gc| {});
+        gc.force_collect(|_gc| {});
 
-        assert_eq!(gc.size(), 0);
+        assert_eq!(gc.allocated_bytes(), 0);
     }
 }

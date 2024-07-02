@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::mem::size_of_val;
+use std::{collections::HashMap, mem::size_of};
 use std::rc::Rc;
 use std::fmt::Display;
 
@@ -31,6 +32,13 @@ impl Collectible for Class {
             fun.mark(gc);
         }
     }
+
+    fn size(&self) -> usize {
+        size_of::<Self>() +
+        size_of_val(&self.name) +
+        size_of_val(&self.statics) +
+        size_of_val(&self.methods)
+    }
 }
 
 impl PartialOrd for Class {
@@ -58,6 +66,12 @@ impl Collectible for Instance {
         for field in self.fields.values() {
             field.mark(gc);
         }
+    }
+
+    fn size(&self) -> usize {
+        size_of::<Self>() +
+        size_of_val(&self.class) +
+        size_of_val(&self.fields)
     }
 }
 
