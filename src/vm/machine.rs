@@ -577,6 +577,30 @@ impl VM {
                     ));
                 }
             },
+            OpCode::Inherit => {
+                let subclass = self.pop()?;
+                let superclass = self.pop()?;
+
+                match (subclass, superclass) {
+                    (Value::Class(mut subclass), Value::Class(superclass)) => {
+                        subclass.as_mut().inherit(superclass.as_ref());
+                    },
+                    (Value::Class(subclass), superclass) => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("{} attempted to inherit from {} which is not a valid class.", subclass, superclass),
+                            "Ensure that the value you are inheriting from is a valid class reference."
+                        ));
+                    },
+                    _ => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            "Attempted to inherit from a non-class value.",
+                            "Ensure that the value you are inheriting from is a valid class reference."
+                        ));
+                    }
+                }
+            },
             OpCode::Method(name) => {
                 let name = frame.constant(name).ok_or_else(|| errors::runtime(
                     frame.last_location(),

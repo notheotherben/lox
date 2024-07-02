@@ -20,6 +20,16 @@ impl Class {
             statics: HashMap::new(),
         }
     }
+
+    pub fn inherit(&mut self, superclass: &Class) {
+        for (name, method) in &superclass.methods {
+            self.methods.insert(name.clone(), *method);
+        }
+
+        for (name, method) in &superclass.statics {
+            self.statics.insert(name.clone(), *method);
+        }
+    }
 }
 
 impl Collectible for Class {

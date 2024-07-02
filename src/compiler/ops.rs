@@ -45,6 +45,7 @@ pub enum OpCode {
     Return,
 
     Class(usize),
+    Inherit,
     Method(usize),
 
     Jump(usize),
@@ -97,6 +98,7 @@ impl Display for OpCode {
             OpCode::Return => write!(f, "OP_RETURN"),
 
             OpCode::Class(..) => write!(f, "OP_CLASS"),
+            OpCode::Inherit => write!(f, "OP_INHERIT"),
             OpCode::Method(..) => write!(f, "OP_METHOD"),
 
             OpCode::Jump(..) => write!(f, "OP_JUMP"),

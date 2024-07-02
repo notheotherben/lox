@@ -398,7 +398,7 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
     fn visit_class(
         &mut self,
         name: &Token,
-        _superclass: Option<&Expr>,
+        superclass: Option<&Expr>,
         _statics: &[Stmt],
         methods: &[Stmt],
     ) -> Result<(), LoxError> {
@@ -406,6 +406,12 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         let class_name = self.define_local(name);
 
         self.chunk_mut().write(OpCode::Class(name_const), name.location());
+
+        if let Some(superclass) = superclass {
+            self.visit_expr(superclass)?;
+            self.chunk_mut().write(OpCode::GetLocal(class_name), name.location());
+            self.chunk_mut().write(OpCode::Inherit, name.location());
+        }
 
         if !methods.is_empty() {
             self.chunk_mut().write(OpCode::GetLocal(class_name), Loc::Native);
