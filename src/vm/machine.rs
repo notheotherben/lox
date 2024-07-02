@@ -336,38 +336,9 @@ impl VM {
             }
 
             OpCode::GetProperty(idx) => {
-                if let Some(Primitive::String(key)) = frame.constant(idx) {
-                    let key = key.clone();
-
-                    match self.pop()? {
-                        Value::Instance(instance) => {
-                            if let Some(value) = instance.as_ref().fields.get(&key) {
-                                self.stack.push(value.cloned());
-                            } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(&key) {
-                                self.stack.push(Value::BoundMethod(instance, *method));
-                            } else {
-                                return Err(errors::runtime(
-                                    frame.last_location(),
-                                    format!("Property '{}' not found on instance.", key),
-                                    "Make sure that you are accessing valid properties on instances."
-                                ));
-                            }
-                        },
-                        value => {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                format!("Attempted to get a property from a non-instance value '{}'.", value),
-                                "Make sure that you are accessing properties on instances."
-                            ));
-                        }
-                    }
-                } else {
-                    return Err(errors::runtime(
-                        frame.last_location(),
-                        "Invalid constant index in byte code.",
-                        "Make sure that you are passing valid constant indices to the virtual machine."
-                    ));
-                }
+                let obj = self.pop()?;
+                let value = self.get_property(&frame, obj, idx)?;
+                self.stack.push(value);
             }
             OpCode::SetProperty(idx) => {
                 if let Some(Primitive::String(key)) = frame.constant(idx) {
@@ -488,46 +459,16 @@ impl VM {
                     ));
                 }
 
-                if let Some(Primitive::String(key)) = frame.constant(property) {
-                    let key = key.clone();
+                let obj_idx = self.stack.len() - call_arity - 1;
 
-                    let obj_idx = self.stack.len() - call_arity - 1;
+                let obj = self.stack.get(obj_idx).ok_or_else(|| errors::runtime(
+                    frame.last_location(),
+                    "Could not retrieve the object upon which the method should be invoked as it did not exist on the stack.",
+                    "Make sure that you are passing valid object references to the virtual machine."
+                ))?.clone();
 
-                    let function = match self.stack.get(obj_idx).ok_or_else(|| errors::runtime(
-                        frame.last_location(),
-                        format!("Could not retrieve the object upon which the method '{}' should be invoked as it did not exist on the stack.", key),
-                        "Make sure that you are passing valid object references to the virtual machine."
-                    ))? {
-                        Value::Instance(instance) => {
-                            if let Some(value) = instance.as_ref().fields.get(&key) {
-                                value.cloned()
-                            } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(&key) {
-                                Value::BoundMethod(*instance, *method)
-                            } else {
-                                return Err(errors::runtime(
-                                    frame.last_location(),
-                                    format!("Property '{}' not found on instance.", key),
-                                    "Make sure that you are accessing valid properties on instances."
-                                ));
-                            }
-                        },
-                        value => {
-                            return Err(errors::runtime(
-                                frame.last_location(),
-                                format!("Attempted to get a property from a non-instance value '{}'.", value),
-                                "Make sure that you are accessing properties on instances."
-                            ));
-                        }
-                    };
-
-                    self.call_function(&frame, function, call_arity, true)?;
-                } else {
-                    return Err(errors::runtime(
-                        frame.last_location(),
-                        "Invalid constant index in byte code.",
-                        "Make sure that you are passing valid constant indices to the virtual machine."
-                    ));
-                }
+                let function = self.get_property(&frame, obj, property)?;
+                self.call_function(&frame, function, call_arity, true)?;
             },
             OpCode::Closure(idx) => {
                 let value = if let Some(value) = frame.constant(idx) {
@@ -832,6 +773,41 @@ impl VM {
         }
 
         Ok(())
+    }
+
+    fn get_property(&mut self, frame: &Frame, instance: Value, idx: usize) -> Result<Value, LoxError> {
+        if let Some(Primitive::String(key)) = frame.constant(idx) {
+            let key = key.clone();
+
+            match instance {
+                Value::Instance(instance) => {
+                    if let Some(value) = instance.as_ref().fields.get(&key) {
+                        Ok(value.cloned())
+                    } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(&key) {
+                        Ok(Value::BoundMethod(instance, *method))
+                    } else {
+                        Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Property '{}' not found on instance.", key),
+                            "Make sure that you are accessing valid properties on instances."
+                        ))
+                    }
+                },
+                value => {
+                    Err(errors::runtime(
+                        frame.last_location(),
+                        format!("Attempted to get a property from a non-instance value '{}'.", value),
+                        "Make sure that you are accessing properties on instances."
+                    ))
+                }
+            }
+        } else {
+            Err(errors::runtime(
+                frame.last_location(),
+                "Invalid constant index in byte code.",
+                "Make sure that you are passing valid constant indices to the virtual machine."
+            ))
+        }
     }
 }
 
