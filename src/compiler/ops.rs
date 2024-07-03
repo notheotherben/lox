@@ -47,6 +47,7 @@ pub enum OpCode {
     Class(usize),
     Inherit,
     Method(usize),
+    GetSuper(usize),
 
     Jump(usize),
     JumpIf(usize),
@@ -100,6 +101,7 @@ impl Display for OpCode {
             OpCode::Class(..) => write!(f, "OP_CLASS"),
             OpCode::Inherit => write!(f, "OP_INHERIT"),
             OpCode::Method(..) => write!(f, "OP_METHOD"),
+            OpCode::GetSuper(..) => write!(f, "OP_GET_SUPER"),
 
             OpCode::Jump(..) => write!(f, "OP_JUMP"),
             OpCode::JumpIf(..) => write!(f, "OP_JUMP_IF"),

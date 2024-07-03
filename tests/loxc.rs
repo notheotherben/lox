@@ -123,4 +123,4 @@ mod lang {
 
 
 #[test]
-fn lang_method_arity() { run_file("tests/lang/method/arity.lox").expect("no errors") }
+fn lang_class_inherited_method() { run_file("tests/lang/class/inherited_method.lox").expect("no errors") }

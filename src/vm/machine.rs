@@ -579,7 +579,7 @@ impl VM {
             },
             OpCode::Inherit => {
                 let subclass = self.pop()?;
-                let superclass = self.pop()?;
+                let superclass = self.peek()?;
 
                 match (subclass, superclass) {
                     (Value::Class(mut subclass), Value::Class(superclass)) => {
@@ -624,6 +624,44 @@ impl VM {
                     }
                 }
             },
+            OpCode::GetSuper(idx) => {
+                let method = frame.constant(idx).ok_or_else(|| errors::runtime(
+                    frame.last_location(),
+                    "Could not retrieve method name from the constant pool.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ))?;
+
+                let superclass = self.pop()?;
+                let instance = self.peek()?;
+
+                match (instance, superclass) {
+                    (Value::Instance(instance), Value::Class(superclass)) => {
+                        if let Some(method) = superclass.as_ref().methods.get(&method.to_string()) {
+                            self.push(Value::BoundMethod(*instance, *method));
+                        } else {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Method '{}' not found in superclass '{}'.", method, superclass),
+                                "Make sure that the method you are attempting to access exists in the superclass."
+                            ));
+                        }
+                    },
+                    (Value::Instance(_), superclass) => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Attempted to get a method from a non-class value '{}'.", superclass),
+                            "Make sure that you are getting methods from class values."
+                        ));
+                    },
+                    (instance, _) => {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Attempted to get a method from a non-instance value '{}'.", instance),
+                            "Make sure that you are getting methods from instance values."
+                        ));
+                    }
+                }
+            }
 
             OpCode::Jump(ip) => {
                 self.jump(ip);

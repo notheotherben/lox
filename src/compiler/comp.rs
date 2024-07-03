@@ -19,13 +19,14 @@ struct CompilerState {
     pub upvalues: Vec<VarRef>,
     pub stack_depth: usize,
     pub fun_type: Option<FunType>,
+    pub has_superclass: Option<bool>,
 
     pub break_targets: Vec<usize>,
 }
 
 #[derive(Default)]
 pub struct Compiler {
-    states: Vec<CompilerState>
+    states: Vec<CompilerState>,
 }
 
 impl Compiler {
@@ -310,8 +311,23 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
         Ok(())
     }
 
-    fn visit_super(&mut self, _loc: &Loc, _method: &Token) -> Result<(), LoxError> {
-        todo!()
+    fn visit_super(&mut self, loc: &Loc, method: &Token) -> Result<(), LoxError> {
+        let this_token = Token::This(loc.clone());
+        let super_token = Token::Super(loc.clone());
+
+        if self.states.iter().rev().any(|state| matches!(state.has_superclass, Some(true))) {
+            self.visit_var_ref(&this_token)?;
+            self.visit_var_ref(&super_token)?;
+            let prop = self.identifier(method.lexeme());
+            self.chunk_mut().write(OpCode::GetSuper(prop), method.location());
+            Ok(())
+        } else {
+            Err(errors::language(
+                loc.clone(),
+                "Cannot use `super` outside of a class method within a subclass.",
+                "Make sure that your method is contained within a class that derives from another superclass.",
+            ))
+        }
     }
 
     fn visit_this(&mut self, loc: &Loc) -> Result<(), LoxError> {
@@ -323,7 +339,7 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
             Err(errors::language(
                 loc.clone(),
                 "Cannot use `this` outside of a class method.",
-                "You can only use `this` within a class method.",
+                "Make sure that your method is contained within a class.",
             ))
         }
     }
@@ -402,25 +418,48 @@ impl StmtVisitor<Result<(), LoxError>> for Compiler {
         _statics: &[Stmt],
         methods: &[Stmt],
     ) -> Result<(), LoxError> {
-        let name_const = self.identifier(name.lexeme());
-        let class_name = self.define_local(name);
+        if superclass.is_some() {
+            self.states.push(CompilerState {
+                has_superclass: Some(true),
+                ..CompilerState::default()
+            });
+        }
 
-        self.chunk_mut().write(OpCode::Class(name_const), name.location());
-
+        let ident = self.identifier(name.lexeme());
+        
+        self.chunk_mut().write(OpCode::Class(ident), name.location());
+        self.chunk_mut().write(OpCode::DefineGlobal(ident), name.location());
+        
         if let Some(superclass) = superclass {
+            self.define_local(&Token::This(name.location()));
+            self.define_local(&Token::Super(name.location()));
             self.visit_expr(superclass)?;
-            self.chunk_mut().write(OpCode::GetLocal(class_name), name.location());
+            self.chunk_mut().write(OpCode::GetGlobal(ident), name.location());
             self.chunk_mut().write(OpCode::Inherit, name.location());
         }
 
         if !methods.is_empty() {
-            self.chunk_mut().write(OpCode::GetLocal(class_name), Loc::Native);
+            self.chunk_mut().write(OpCode::GetGlobal(ident), Loc::Native);
 
             for method in methods {
                 self.visit_stmt(method)?;
             }
 
             self.chunk_mut().write(OpCode::Pop, Loc::Native);
+        }
+
+        if superclass.is_some() {
+            let comp = self.states.pop().unwrap();
+            let ptr = self.chunk_mut().add_constant(Primitive::Function(Function::new(
+                format!("class@{}", name.lexeme()),
+                0,
+                comp.upvalues,
+                comp.chunk,
+            )));
+
+            self.chunk_mut().write(OpCode::Closure(ptr), Loc::Native);
+            self.chunk_mut().write(OpCode::Nil, Loc::Native);
+            self.chunk_mut().write(OpCode::Call(0), Loc::Native);
         }
 
         Ok(())
