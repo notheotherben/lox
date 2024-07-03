@@ -176,27 +176,43 @@ impl ExprVisitor<Result<(), LoxError>> for Compiler {
     }
 
     fn visit_call(&mut self, callee: &Expr, args: &[Expr], close: &Token) -> Result<(), LoxError> {
-        if let Expr::Get(obj, property) = callee {
-            // If we're immediately invoking the result of a property access, we can optimize the
-            // call path using the OpCode::Invoke instruction.
-            self.visit_expr(obj)?;
+        match callee {
+            Expr::Get(obj, property) => {
+                // If we're immediately invoking the result of a property access, we can optimize the
+                // call path using the OpCode::Invoke instruction.
+                let prop = self.identifier(property.lexeme());
 
-            for arg in args {
-                self.visit_expr(arg)?;
+                self.visit_expr(obj)?;
+   
+                for arg in args {
+                    self.visit_expr(arg)?;
+                }
+
+                self.chunk_mut().write(OpCode::Invoke(prop, args.len()), property.location());
+            },
+            Expr::Super(loc, property) => {
+                let prop = self.identifier(property.lexeme());
+
+                self.visit_var_ref(&Token::This(loc.clone()))?;
+
+                for arg in args {
+                    self.visit_expr(arg)?;
+                }
+
+                self.visit_var_ref(&Token::Super(loc.clone()))?;
+                self.chunk_mut().write(OpCode::InvokeSuper(prop, args.len()), property.location());
+            },
+            callee => {
+                self.visit_expr(callee)?;
+
+                self.chunk_mut().write(OpCode::Nil, close.location());
+
+                for arg in args {
+                    self.visit_expr(arg)?;
+                }
+
+                self.chunk_mut().write(OpCode::Call(args.len()), close.location());
             }
-
-            let prop = self.identifier(property.lexeme());
-            self.chunk_mut().write(OpCode::Invoke(prop, args.len()), property.location());
-        } else {
-            self.visit_expr(callee)?;
-
-            self.chunk_mut().write(OpCode::Nil, close.location());
-
-            for arg in args {
-                self.visit_expr(arg)?;
-            }
-
-            self.chunk_mut().write(OpCode::Call(args.len()), close.location());
         }
 
         Ok(())

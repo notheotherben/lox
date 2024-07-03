@@ -40,6 +40,7 @@ pub enum OpCode {
 
     Call(usize),
     Invoke(usize, usize),
+    InvokeSuper(usize, usize),
     Closure(usize),
     CloseUpvalue,
     Return,
@@ -94,6 +95,7 @@ impl Display for OpCode {
 
             OpCode::Call(..) => write!(f, "OP_CALL"),
             OpCode::Invoke(..) => write!(f, "OP_INVOKE"),
+            OpCode::InvokeSuper(..) => write!(f, "OP_INVOKE_SUPER"),
             OpCode::Closure(..) => write!(f, "OP_CLOSURE"),
             OpCode::CloseUpvalue => write!(f, "OP_CLOSE_UPVALUE"),
             OpCode::Return => write!(f, "OP_RETURN"),

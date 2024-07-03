@@ -91,6 +91,7 @@ impl Chunk {
 
                 OpCode::Call(arity) => writeln!(f, "{} {} at {}", instruction, arity, loc),
                 OpCode::Invoke(idx, arity) => writeln!(f, "{} {} {} at {}", instruction, self.constants[*idx], arity, loc),
+                OpCode::InvokeSuper(idx, arity) => writeln!(f, "{} {} {} at {}", instruction, self.constants[*idx], arity, loc),
 
                 OpCode::Closure(idx) => {
                     if let Primitive::Function(Function { name, upvalues, .. }) = &self.constants[*idx] {

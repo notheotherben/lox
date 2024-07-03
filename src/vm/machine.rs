@@ -470,6 +470,40 @@ impl VM {
                 let function = self.get_property(&frame, obj, property)?;
                 self.call_function(&frame, function, call_arity, true)?;
             },
+            OpCode::InvokeSuper(property, call_arity) => {
+                if self.frames.len() >= 1000 {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "The maximum call stack size has been exceeded.",
+                        "Make sure that you are not calling functions with unbounded recursion.",
+                    ));
+                }
+
+                let method = frame.constant(property).ok_or_else(|| errors::runtime(
+                    frame.last_location(),
+                    "Could not retrieve method name from the constant pool.",
+                    "Make sure that you are passing valid constant indices to the virtual machine."
+                ))?;
+
+                let superclass = self.pop()?;
+                if let Value::Class(superclass) = superclass {
+                    if let Some(function) = superclass.as_ref().methods.get(&method.to_string()) {
+                        self.call_function(&frame, Value::Function(*function), call_arity, true)?;
+                    } else {
+                        return Err(errors::runtime(
+                            frame.last_location(),
+                            format!("Method '{}' not found in superclass '{}'.", method, superclass),
+                            "Make sure that the method you are attempting to access exists in the superclass."
+                        ));
+                    }
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        format!("Attempted to invoke a super method on a non-class value '{}'.", superclass),
+                        "Make sure that you are passing the correct stack frames to the OP_INVOKE_SUPER opcode."
+                    ));
+                }
+            },
             OpCode::Closure(idx) => {
                 let value = if let Some(value) = frame.constant(idx) {
                     value
