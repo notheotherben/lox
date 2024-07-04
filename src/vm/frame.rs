@@ -2,7 +2,7 @@ use std::{rc::Rc, fmt::{Debug, Display}};
 
 use crate::{Loc, compiler::{Chunk, VarRef, Primitive, OpCode}};
 
-use super::{gc::Collectible, value::Upvalue, Alloc, Allocator, Function, GC};
+use super::{gc::Collectible, upvalue::Upvalue, Alloc, Allocator, Function, GC};
 use crate::compiler::Function as CFunction;
 
 #[derive(Clone)]

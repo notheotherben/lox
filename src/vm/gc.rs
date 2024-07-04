@@ -1,7 +1,7 @@
 use std::{fmt::{Debug, Display}, mem::{size_of, size_of_val}, ptr::NonNull};
 
 
-use super::{class::{Class, Instance}, fun::BoundMethod, value::Upvalue, Function, Value};
+use super::{class::{Class, Instance}, fun::BoundMethod, upvalue::Upvalue, Function, Value};
 
 /// A trait which is implemented by the garbage collector to indicate that it can allocate
 /// certain types of objects.

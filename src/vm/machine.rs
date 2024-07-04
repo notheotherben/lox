@@ -2,7 +2,7 @@ use std::{collections::{HashMap, LinkedList}, fmt::Debug, time::SystemTime};
 
 use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
 
-use super::{class::Instance, fun::BoundMethod, gc::{Alloc, Allocator}, value::{PrimitiveReference, Upvalue}, Class, Collectible, Frame, Function, Value, GC};
+use super::{class::Instance, fun::BoundMethod, gc::{Alloc, Allocator}, upvalue::Upvalue, value::PrimitiveReference, Class, Collectible, Frame, Function, Value, GC};
 
 pub struct VM {
     debug: bool,

@@ -3,6 +3,7 @@ mod fun;
 mod frame;
 mod gc;
 mod machine;
+mod upvalue;
 mod value;
 
 use class::{Class, Instance};
