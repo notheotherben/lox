@@ -2,7 +2,7 @@ use std::{collections::{HashMap, LinkedList}, fmt::Debug, time::SystemTime};
 
 use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
 
-use super::{class::Instance, gc::{Alloc, Allocator}, value::Upvalue, Class, Collectible, Frame, Function, Value, GC};
+use super::{class::Instance, fun::BoundMethod, gc::{Alloc, Allocator}, value::{PrimitiveReference, Upvalue}, Class, Collectible, Frame, Function, Value, GC};
 
 pub struct VM {
     debug: bool,
@@ -188,7 +188,7 @@ impl VM {
                         Primitive::Bool(b) => Value::Bool(*b),
                         Primitive::Number(n) => Value::Number(*n),
                         Primitive::String(s) => Value::String(s.clone()),
-                        primitive => Value::Primitive(primitive.clone())
+                        primitive => Value::Primitive(PrimitiveReference::new(primitive))
                     };
 
                     self.stack.push(value);
@@ -671,7 +671,8 @@ impl VM {
                 match (instance, superclass) {
                     (Value::Instance(instance), Value::Class(superclass)) => {
                         if let Some(method) = superclass.as_ref().methods.get(&method.to_string()) {
-                            self.push(Value::BoundMethod(*instance, *method));
+                            let bound_method = self.gc.alloc(BoundMethod(*instance, *method));
+                            self.push(Value::BoundMethod(bound_method));
                         } else {
                             return Err(errors::runtime(
                                 frame.last_location(),
@@ -780,7 +781,8 @@ impl VM {
                     },
                 }
             },
-            Value::BoundMethod(instance, function) => {
+            Value::BoundMethod(bound) => {
+                let BoundMethod(instance, function) = bound.as_ref();
                 if function.as_ref().arity() != call_arity {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -791,8 +793,8 @@ impl VM {
 
                 if let Function::Closure { .. } = function.as_ref() {
                     let self_idx = self.stack.len() - call_arity - 1;
-                    self.stack[self_idx] = Value::Instance(instance);
-                    self.frames.push(Frame::call(function, self.stack.len(), fast_call));
+                    self.stack[self_idx] = Value::Instance(*instance);
+                    self.frames.push(Frame::call(*function, self.stack.len(), fast_call));
                 } else {
                     return Err(errors::runtime(
                         frame.last_location(),
@@ -880,7 +882,8 @@ impl VM {
                     if let Some(value) = instance.as_ref().fields.get(&key) {
                         Ok(value.cloned())
                     } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(&key) {
-                        Ok(Value::BoundMethod(instance, *method))
+                        let bound_method = self.gc.alloc(BoundMethod(instance, *method));
+                        Ok(Value::BoundMethod(bound_method))
                     } else {
                         Err(errors::runtime(
                             frame.last_location(),

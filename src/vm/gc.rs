@@ -1,7 +1,7 @@
 use std::{fmt::{Debug, Display}, mem::{size_of, size_of_val}, ptr::NonNull};
 
 
-use super::{class::{Class, Instance}, Function, value::Upvalue, Value};
+use super::{class::{Class, Instance}, fun::BoundMethod, value::Upvalue, Function, Value};
 
 /// A trait which is implemented by the garbage collector to indicate that it can allocate
 /// certain types of objects.
@@ -28,6 +28,7 @@ pub trait Collectible {
 pub struct GC {
     values: GCPool<Value>,
     functions: GCPool<Function>,
+    bound_methods: GCPool<BoundMethod>,
     classes: GCPool<Class>,
     instances: GCPool<Instance>,
     upvalues: GCPool<Upvalue>,
@@ -73,6 +74,7 @@ impl GC {
     pub fn allocated_bytes(&self) -> usize {
         self.values.allocated_bytes +
         self.functions.allocated_bytes +
+        self.bound_methods.allocated_bytes +
         self.classes.allocated_bytes +
         self.instances.allocated_bytes +
         self.upvalues.allocated_bytes
@@ -81,6 +83,7 @@ impl GC {
     fn debug_sweep(&self) {
         self.values.debug_sweep();
         self.functions.debug_sweep();
+        self.bound_methods.debug_sweep();
         self.classes.debug_sweep();
         self.instances.debug_sweep();
         self.upvalues.debug_sweep();
@@ -89,6 +92,7 @@ impl GC {
     fn sweep(&mut self) {
         self.values.sweep();
         self.functions.sweep();
+        self.bound_methods.sweep();
         self.classes.sweep();
         self.instances.sweep();
         self.upvalues.sweep();
@@ -100,6 +104,7 @@ impl Default for GC {
         Self {
             values: Default::default(),
             functions: Default::default(),
+            bound_methods: Default::default(),
             classes: Default::default(),
             instances: Default::default(),
             upvalues: Default::default(),
@@ -119,6 +124,12 @@ impl Allocator<Value> for GC {
 impl Allocator<Function> for GC {
     fn alloc(&mut self, value: Function) -> Alloc<Function> {
         self.functions.alloc(value)
+    }
+}
+
+impl Allocator<BoundMethod> for GC {
+    fn alloc(&mut self, value: BoundMethod) -> Alloc<BoundMethod> {
+        self.bound_methods.alloc(value)
     }
 }
 
@@ -386,6 +397,11 @@ mod tests {
     use std::mem::size_of;
 
     use super::*;
+
+    #[test]
+    fn test_alloc_size() {
+        assert_eq!(size_of::<Alloc<Value>>(), size_of::<&Value>());
+    }
 
     #[test]
     fn test_basic_gc() {

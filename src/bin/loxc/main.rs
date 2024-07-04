@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use lox::{errors, LoxError, vm::VM};
 use lox::cmdline::CommandLineOptions;
 
@@ -14,7 +12,8 @@ fn main() {
     let result = if let Some(file) = opts.file {
         run_file(&file, vm)
     } else {
-        run_prompt(vm)
+        eprintln!("REPL is only supported in the loxi binary.");
+        std::process::exit(1);
     };
 
     if let Err(e) = result {
@@ -30,33 +29,10 @@ fn run_file(filename: &str, vm: VM) -> Result<(), LoxError> {
         "Make sure that the file is a valid UTF-8 file.",
     ))?;
 
-    let mut vm = vm;
-    run(content, &mut vm)
+    run(content, vm)
 }
 
-fn run_prompt(vm: VM) -> Result<(), LoxError> {
-    let mut vm = vm;
-    let mut buffer = String::new();
-    loop {
-        print!("> ");
-        std::io::stdout().flush()?;
-
-        buffer.clear();
-        std::io::stdin().read_line(&mut buffer)?;
-
-        if buffer.trim() == "exit" {
-            break;
-        }
-
-        if let Err(e) = run(&buffer, &mut vm) {
-            eprintln!("{}", e);
-        }
-    }
-
-    Ok(())
-}
-
-fn run(source: &str, vm: &mut VM) -> Result<(), LoxError> {
+fn run(source: &str, mut vm: VM) -> Result<(), LoxError> {
     let lexer = lox::lexer::Scanner::new(source);
     let mut had_error = false;
 

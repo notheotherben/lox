@@ -4,7 +4,7 @@ use std::{
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{value::Upvalue, Alloc, Collectible, Value, VM};
+use super::{class::Instance, value::Upvalue, Alloc, Collectible, Value, VM};
 
 #[derive(Clone)]
 pub enum Function {
@@ -110,5 +110,26 @@ impl Debug for Function {
             Function::Native { name, .. } => write!(f, "<native {}>", name),
             Function::Closure { name, chunk, .. } => write!(f, "<fn {}>\n{}", name, chunk),
         }
+    }
+}
+
+pub struct BoundMethod(pub Alloc<Instance>, pub Alloc<Function>);
+
+impl Collectible for BoundMethod {
+    fn gc(&self) {
+        self.0.gc();
+        self.1.gc();
+    }
+}
+
+impl Display for BoundMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.1)
+    }
+}
+
+impl Debug for BoundMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.1)
     }
 }

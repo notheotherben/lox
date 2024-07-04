@@ -1,8 +1,8 @@
-use std::{fmt::Display, mem::{size_of, size_of_val}};
+use std::{fmt::{Display, Debug}, ptr::NonNull};
 
 use crate::compiler::Primitive;
 
-use super::{Alloc, Class, Collectible, Function, Instance};
+use super::{fun::BoundMethod, Alloc, Class, Collectible, Function, Instance};
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -10,12 +10,12 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Primitive(Primitive),
+    Primitive(PrimitiveReference),
     Pointer(Alloc<Value>),
     Function(Alloc<Function>),
     Class(Alloc<Class>),
     Instance(Alloc<Instance>),
-    BoundMethod(Alloc<Instance>, Alloc<Function>)
+    BoundMethod(Alloc<BoundMethod>)
 }
 
 impl Value {
@@ -35,23 +35,15 @@ impl Collectible for Value {
             Value::Function(f) => f.gc(),
             Value::Class(c) => c.gc(),
             Value::Instance(i) => i.gc(),
-            Value::BoundMethod(i, f) => {
-                i.gc();
-                f.gc();
-            },
+            Value::BoundMethod(b) => b.gc(),
             _ => {}
         }
     }
 
     fn size(&self) -> usize {
         match self {
-            Value::Pointer(p) => size_of::<Self>() + p.size(),
-            Value::Function(f) => size_of::<Self>() + f.size(),
-            Value::Class(c) => size_of::<Self>() + c.size(),
-            Value::Instance(i) => size_of::<Self>() + i.size(),
-            Value::String(s) => size_of::<Self>() + size_of_val(s),
-            Value::BoundMethod(i, f) => size_of::<Self>() + i.size() + f.size(),
-            _ => size_of::<Self>(),
+            Value::String(s) => std::mem::size_of::<Value>() + std::mem::size_of_val(s),
+            _ => std::mem::size_of::<Value>()
         }
     }
 }
@@ -66,7 +58,7 @@ impl PartialEq for Value {
             (Value::Class(a), Value::Class(b)) => a.ptr_eq(b),
             (Value::Instance(a), Value::Instance(b)) => a.ptr_eq(b),
             (Value::Function(a), Value::Function(b)) => a.ptr_eq(b),
-            (Value::BoundMethod(ai, af), Value::BoundMethod(bi, bf)) => ai.ptr_eq(bi) && af.ptr_eq(bf),
+            (Value::BoundMethod(a), Value::BoundMethod(b)) => a.ptr_eq(b),
             _ => false
         }
     }
@@ -89,12 +81,12 @@ impl Display for Value {
             Value::Bool(b) => write!(f, "{}", *b),
             Value::Number(n) => write!(f, "{}", *n),
             Value::String(s) => write!(f, "{}", s),
-            Value::Primitive(p) => write!(f, "{}", p),
+            Value::Primitive(p) => write!(f, "{}", p.as_ref()),
             Value::Pointer(p) => write!(f, "{}", p.as_ref()),
             Value::Function(fun) => write!(f, "{}", fun),
             Value::Class(c) => write!(f, "{}", c),
             Value::Instance(i) => write!(f, "{}", i.as_ref()),
-            Value::BoundMethod(_i, fun) => write!(f, "{}", fun.as_ref())
+            Value::BoundMethod(b) => write!(f, "{}", b.as_ref())
         }
     }
 }
@@ -128,17 +120,53 @@ impl Display for Upvalue {
     }
 }
 
+pub struct PrimitiveReference(NonNull<Primitive>);
+
+impl PrimitiveReference {
+    pub fn new(primitive: &Primitive) -> Self {
+        Self(NonNull::from(primitive))
+    }
+}
+
+impl Copy for PrimitiveReference {}
+
+impl Clone for PrimitiveReference {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl AsRef<Primitive> for PrimitiveReference {
+    fn as_ref(&self) -> &Primitive {
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl Debug for PrimitiveReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
+    use std::mem::{size_of, size_of_val};
 
     #[test]
-    fn test_value_sizes() {
+    fn test_size() {
+        // TODO: This should be 16 bits but because we store String directly (instead of interning it) it takes 24 bits
+        assert_eq!(size_of::<Value>(), 24);
+    }
+
+    #[test]
+    fn test_value_size_reporting() {
+        let primitive = Primitive::Nil;
+
         assert_eq!(Value::Nil.size(), size_of::<Value>());
         assert_eq!(Value::Bool(false).size(), size_of::<Value>());
         assert_eq!(Value::Number(0.0).size(), size_of::<Value>());
         assert_eq!(Value::String("test".to_string()).size(), size_of::<Value>() + size_of_val(&"test".to_string()));
-        assert_eq!(Value::Primitive(Primitive::Nil).size(), size_of::<Value>());
+        assert_eq!(Value::Primitive(PrimitiveReference::new(&primitive)).size(), size_of::<Value>());
     }
 }
