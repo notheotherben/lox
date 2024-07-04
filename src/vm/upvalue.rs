@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{gc::{Alloc, Collectible}, value::Value};
+use super::{Alloc, Collectible, Value};
 
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]

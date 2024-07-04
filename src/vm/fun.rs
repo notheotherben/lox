@@ -4,7 +4,7 @@ use std::{
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{class::Instance, upvalue::Upvalue, Alloc, Collectible, Value, VM};
+use super::{alloc::Alloc, class::Instance, upvalue::Upvalue, Collectible, Value, VM};
 
 #[derive(Clone)]
 pub enum Function {
