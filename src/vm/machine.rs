@@ -447,7 +447,7 @@ impl VM {
 
                 let function = function.unwrap().clone();
 
-                self.call_function(&frame, function, call_arity, false)?;
+                self.call_function(&frame, &function, call_arity, false)?;
             },
             OpCode::Invoke(property, call_arity) => {
                 if self.frames.len() >= 1000 {
@@ -466,8 +466,54 @@ impl VM {
                     "Make sure that you are passing valid object references to the virtual machine."
                 ))?.clone();
 
-                let function = self.get_property(&frame, obj, property)?;
-                self.call_function(&frame, function, call_arity, true)?;
+                if let Some(Primitive::String(key)) = frame.constant(property) {
+                    match obj {
+                        Value::Instance(instance) => {
+                            if let Some(value) = instance.as_ref().fields.get(key) {
+                                self.call_function(&frame, value.as_ref(), call_arity, true)?;
+                            } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(key) {
+                                if method.as_ref().arity() != call_arity {
+                                    return Err(errors::runtime(
+                                        frame.last_location(),
+                                        format!("Invalid number of arguments, got {} but expected {}.", call_arity, method.as_ref().arity()),
+                                        "Make sure that you are passing the correct number of arguments to the function."
+                                    ));
+                                }
+                
+                                if let Function::Closure { .. } = method.as_ref() {
+                                    let self_idx = self.stack.len() - call_arity - 1;
+                                    self.stack[self_idx] = Value::Instance(instance);
+                                    self.frames.push(Frame::call(*method, self.stack.len(), true));
+                                } else {
+                                    return Err(errors::runtime(
+                                        frame.last_location(),
+                                        "Attempted to call a non-closure bound method.",
+                                        "Make sure that you are calling a closure bound method."
+                                    ));
+                                }
+                            } else {
+                                return Err(errors::runtime(
+                                    frame.last_location(),
+                                    format!("Property '{}' not found on instance.", key),
+                                    "Make sure that you are accessing valid properties on instances."
+                                ))
+                            }
+                        },
+                        value => {
+                            return Err(errors::runtime(
+                                frame.last_location(),
+                                format!("Attempted to get a property from a non-instance value '{}'.", value),
+                                "Make sure that you are accessing properties on instances."
+                            ))
+                        }
+                    }
+                } else {
+                    return Err(errors::runtime(
+                        frame.last_location(),
+                        "Invalid constant index in byte code.",
+                        "Make sure that you are passing valid constant indices to the virtual machine."
+                    ))
+                }
             },
             OpCode::InvokeSuper(property, call_arity) => {
                 if self.frames.len() >= 1000 {
@@ -487,7 +533,7 @@ impl VM {
                 let superclass = self.pop()?;
                 if let Value::Class(superclass) = superclass {
                     if let Some(function) = superclass.as_ref().methods.get(&method.to_string()) {
-                        self.call_function(&frame, Value::Function(*function), call_arity, true)?;
+                        self.call_function(&frame, &Value::Function(*function), call_arity, true)?;
                     } else {
                         return Err(errors::runtime(
                             frame.last_location(),
@@ -753,7 +799,7 @@ impl VM {
         self.frames.last_mut().unwrap().ip = ip;
     }
 
-    fn call_function(&mut self, frame: &Frame, function: Value, call_arity: usize, fast_call: bool) -> Result<(), LoxError> {
+    fn call_function(&mut self, frame: &Frame, function: &Value, call_arity: usize, fast_call: bool) -> Result<(), LoxError> {
         match function {
             Value::Function(function) => {
                 if function.as_ref().arity() != call_arity {
@@ -766,12 +812,12 @@ impl VM {
                 
                 match function.as_ref() {
                     Function::Closure {..} => {
-                        self.frames.push(Frame::call(function, self.stack.len(), fast_call));
+                        self.frames.push(Frame::call(*function, self.stack.len(), fast_call));
                     },
                     Function::Native { fun, .. } => {
                         let native = fun.clone();
 
-                        self.frames.push(Frame::call(function, self.stack.len(), fast_call));
+                        self.frames.push(Frame::call(*function, self.stack.len(), fast_call));
 
                         let result = native(self)?;
                         let call_frame = self.frames.pop().unwrap();
@@ -803,7 +849,7 @@ impl VM {
                 }
             }
             Value::Class(class) => {
-                let instance = self.gc.alloc(Instance::new(class));
+                let instance = self.gc.alloc(Instance::new(*class));
 
                 if let Some(init) = class.as_ref().methods.get("init") {
                     if init.as_ref().arity() != call_arity {
