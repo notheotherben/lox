@@ -1,15 +1,20 @@
 use std::io::Write;
 
 use lox::{errors, LoxError, vm::VM};
+use lox::cmdline::CommandLineOptions;
 
 fn main() {
-    let result = match std::env::args().nth(1) {
-        Some(filename) => {
-            run_file(&filename)
-        },
-        None => {
-            run_prompt()
-        }
+    let opts = CommandLineOptions::parse();
+
+    let mut vm = VM::default();
+    if opts.debug {
+        vm = vm.with_debug();
+    }
+
+    let result = if let Some(file) = opts.file {
+        run_file(&file, vm)
+    } else {
+        run_prompt(vm)
     };
 
     if let Err(e) = result {
@@ -18,19 +23,19 @@ fn main() {
     }
 }
 
-fn run_file(filename: &str) -> Result<(), LoxError> {
+fn run_file(filename: &str, vm: VM) -> Result<(), LoxError> {
     let content = std::fs::read(filename)?;
     let content = std::str::from_utf8(&content).map_err(|_e| errors::system(
         "The file you provided is not a valid UTF-8 file.",
         "Make sure that the file is a valid UTF-8 file.",
     ))?;
 
-    let mut vm = VM::default();
+    let mut vm = vm;
     run(content, &mut vm)
 }
 
-fn run_prompt() -> Result<(), LoxError> {
-    let mut vm = VM::default();
+fn run_prompt(vm: VM) -> Result<(), LoxError> {
+    let mut vm = vm;
     let mut buffer = String::new();
     loop {
         print!("> ");
@@ -60,6 +65,12 @@ fn run(source: &str, vm: &mut VM) -> Result<(), LoxError> {
         had_error = true;
     }).filter_map(|t| t.ok()));
 
+    for err in errs {
+        eprintln!("{}", err);
+        had_error = true;
+    }
+    
+    let errs = lox::analysis::analyze(&stmts);
     for err in errs {
         eprintln!("{}", err);
         had_error = true;

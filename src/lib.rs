@@ -1,5 +1,6 @@
 #![feature(linked_list_cursors)]
 
+pub mod cmdline;
 mod core;
 pub mod ast;
 pub mod analysis;

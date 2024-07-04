@@ -362,10 +362,6 @@ impl<T: Collectible + Debug> GCPool<T> {
         unsafe {
             let mut current = self.heap;
             while let Some(c) = current {
-                if !c.as_ref().marked {
-                    eprintln!("GC: Collecting {:?}", c.as_ref().value);
-                }
-
                 current = c.as_ref().next;
             }
         }

@@ -1,16 +1,16 @@
 use std::io::Write;
 
-use lox::{errors, LoxError, interpreter::Interpreter};
+use lox::{cmdline::CommandLineOptions, errors, interpreter::Interpreter, LoxError};
 
 fn main() {
+    let opts = CommandLineOptions::parse();
+
     let mut interpreter = Interpreter::default();
-    let result = match std::env::args().nth(1) {
-        Some(filename) => {
-            run_file(&filename, &mut interpreter)
-        },
-        None => {
-            run_prompt(&mut interpreter)
-        }
+
+    let result = if let Some(file) = opts.file {
+        run_file(&file, &mut interpreter)
+    } else {
+        run_prompt(&mut interpreter)
     };
 
     if let Err(e) = result {
@@ -59,6 +59,12 @@ fn run(source: &str, interpreter: &mut Interpreter) -> Result<(), LoxError> {
         had_error = true;
     }).filter_map(|t| t.ok()));
 
+    for err in errs {
+        eprintln!("{}", err);
+        had_error = true;
+    }
+    
+    let errs = lox::analysis::analyze(&stmts);
     for err in errs {
         eprintln!("{}", err);
         had_error = true;
