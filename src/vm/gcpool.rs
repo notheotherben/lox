@@ -3,8 +3,6 @@ use std::ptr::NonNull;
 use super::alloc::{Alloc, Allocation};
 use super::gc::Collectible;
 
-
-
 pub struct GCPool<T: Collectible> {
     heap: Option<NonNull<Allocation<T>>>,
     pub(crate) allocated_bytes: usize,

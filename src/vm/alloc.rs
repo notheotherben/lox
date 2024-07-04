@@ -19,9 +19,9 @@ pub struct Allocation<T> {
 }
 
 /// A wrapper around an `AllocRef` which provides a safe interface to the underlying allocation.
-pub struct Alloc<T: Collectible>(pub(crate) NonNull<Allocation<T>>);
+pub struct Alloc<T>(pub(crate) NonNull<Allocation<T>>);
 
-impl<T: Collectible> Alloc<T> {
+impl<T> Alloc<T> {
     pub fn ptr_eq(self, other: &Self) -> bool {
         self.0 == other.0
     }
@@ -31,81 +31,97 @@ impl<T: Collectible> Alloc<T> {
     }
 }
 
-impl<T: Collectible + Copy> Alloc<T> {
+impl<T: Copy> Alloc<T> {
     pub fn copied(&self) -> T {
         unsafe { self.0.as_ref().value }
     }
 }
 
-impl<T: Collectible + Clone> Alloc<T> {
+impl<T: Clone> Alloc<T> {
     pub fn cloned(&self) -> T {
         unsafe { self.0.as_ref().value.clone() }
     }
 }
 
-impl<T: Collectible> Copy for Alloc<T> {}
+impl<T> Copy for Alloc<T> {}
 
-impl<T: Collectible> Clone for Alloc<T> {
+impl<T> Clone for Alloc<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: Collectible> AsRef<T> for Alloc<T> {
+impl<T> AsRef<T> for Alloc<T> {
     fn as_ref(&self) -> &T {
         unsafe { &self.0.as_ref().value }
     }
 }
 
-impl<T: Collectible> AsMut<T> for Alloc<T> {
+impl<T> AsMut<T> for Alloc<T> {
     fn as_mut(&mut self) -> &mut T {
         unsafe { &mut (*self.0.as_ptr()).value }
     }
 }
 
-impl<T: Collectible + PartialEq> PartialEq for Alloc<T> {
+impl<T: PartialEq> PartialEq for Alloc<T> {
     fn eq(&self, other: &Self) -> bool {
         self.as_ref() == other.as_ref()
     }
 }
 
-impl<T: Collectible + PartialEq<T>> PartialEq<T> for Alloc<T> {
+impl<T: PartialEq<T>> PartialEq<T> for Alloc<T> {
     fn eq(&self, other: &T) -> bool {
         self.as_ref() == other
     }
 }
 
-impl<T: Collectible + Eq> Eq for Alloc<T> {}
+impl<T: Eq> Eq for Alloc<T> {}
 
-impl<T: Collectible + PartialOrd> PartialOrd for Alloc<T> {
+impl<T: PartialOrd> PartialOrd for Alloc<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.as_ref().partial_cmp(other.as_ref())
     }
 }
 
-impl<T: Collectible + Ord> PartialOrd<T> for Alloc<T> {
+impl<T: Ord> PartialOrd<T> for Alloc<T> {
     fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
         self.as_ref().partial_cmp(other)
     }
 }
 
-impl<T: Collectible + Ord> Ord for Alloc<T> {
+impl<T: Ord> Ord for Alloc<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.as_ref().cmp(other.as_ref())
     }
 }
 
-impl<T: Collectible + Debug> Debug for Alloc<T> {
+impl<T: Debug> Debug for Alloc<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?} (0x{})", self.as_ref(), self.0.as_ptr() as usize)
     }
 }
 
-impl<T: Collectible + Display> Display for Alloc<T> {
+impl<T: Display> Display for Alloc<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         unsafe {
             write!(f, "{}", self.0.as_ref().value)
         }
+    }
+}
+
+impl Collectible for Alloc<String> {
+    fn gc(&self) {
+        unsafe {
+            if self.0.as_ref().marked {
+                return;
+            }
+
+            (*self.0.as_ptr()).marked = true;
+        }
+    }
+
+    fn size(&self) -> usize {
+        size_of::<Self>() + self.as_ref().len()
     }
 }
 

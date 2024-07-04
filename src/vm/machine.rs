@@ -187,7 +187,7 @@ impl VM {
                         Primitive::Nil => Value::Nil,
                         Primitive::Bool(b) => Value::Bool(*b),
                         Primitive::Number(n) => Value::Number(*n),
-                        Primitive::String(s) => Value::String(s.clone()),
+                        Primitive::String(s) => Value::String(self.gc.intern(s)),
                         primitive => Value::Primitive(PrimitiveReference::new(primitive))
                     };
 
@@ -218,8 +218,7 @@ impl VM {
             }
             OpCode::GetGlobal(idx) => {
                 if let Some(Primitive::String(key)) = frame.constant(idx) {
-                    let key = key.clone();
-                    if let Some(value) = self.globals.get(&key) {
+                    if let Some(value) = self.globals.get(key) {
                         self.stack.push(value.cloned());
                     } else {
                         return Err(errors::runtime(
@@ -376,10 +375,10 @@ impl VM {
                         self.stack.push(Value::Number(left + right));
                     },
                     (Value::String(left), right) => {
-                        self.stack.push(Value::String(format!("{}{}", left, right)));
+                        self.stack.push(Value::String(self.gc.intern(&format!("{}{}", left.as_ref(), right))));
                     },
                     (left, Value::String(right)) => {
-                        self.stack.push(Value::String(format!("{}{}", left, right)));
+                        self.stack.push(Value::String(self.gc.intern(&format!("{}{}", left, right.as_ref()))));
                     },
                     (left, right) => {
                         return Err(errors::runtime(
@@ -875,13 +874,11 @@ impl VM {
 
     fn get_property(&mut self, frame: &Frame, instance: Value, idx: usize) -> Result<Value, LoxError> {
         if let Some(Primitive::String(key)) = frame.constant(idx) {
-            let key = key.clone();
-
             match instance {
                 Value::Instance(instance) => {
-                    if let Some(value) = instance.as_ref().fields.get(&key) {
+                    if let Some(value) = instance.as_ref().fields.get(key) {
                         Ok(value.cloned())
-                    } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(&key) {
+                    } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(key) {
                         let bound_method = self.gc.alloc(BoundMethod(instance, *method));
                         Ok(Value::BoundMethod(bound_method))
                     } else {

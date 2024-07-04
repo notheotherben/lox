@@ -5,6 +5,7 @@ mod frame;
 mod gc;
 mod gcpool;
 mod machine;
+mod stringpool;
 mod upvalue;
 mod value;
 

@@ -1,7 +1,7 @@
 use std::{fmt::Display, mem::size_of_val};
 
 
-use super::{alloc::Alloc, class::{Class, Instance}, fun::BoundMethod, upvalue::Upvalue, Function, Value, gcpool::GCPool};
+use super::{alloc::Alloc, class::{Class, Instance}, fun::BoundMethod, gcpool::GCPool, stringpool::StringPool, upvalue::Upvalue, Function, Value};
 
 /// A trait which is implemented by the garbage collector to indicate that it can allocate
 /// certain types of objects.
@@ -33,6 +33,8 @@ pub struct GC {
     instances: GCPool<Instance>,
     upvalues: GCPool<Upvalue>,
 
+    strings: StringPool,
+
     growth_factor: usize,
     checkpoint: usize,
 }
@@ -58,6 +60,8 @@ impl GC {
 
         scanner();
 
+        self.strings.sweep();
+
         #[cfg(debug)]
         self.debug_sweep();
 
@@ -78,6 +82,11 @@ impl GC {
         self.classes.allocated_bytes +
         self.instances.allocated_bytes +
         self.upvalues.allocated_bytes
+    }
+
+    pub fn intern(&mut self, value: &String) -> Alloc<String> {
+        let ptr = self.strings.intern(value);
+        Alloc(ptr)
     }
 
     #[cfg(debug)]
@@ -109,6 +118,7 @@ impl Default for GC {
             classes: Default::default(),
             instances: Default::default(),
             upvalues: Default::default(),
+            strings: Default::default(),
             growth_factor: 2,
             checkpoint: 1024,
         }

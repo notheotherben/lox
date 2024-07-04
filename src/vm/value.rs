@@ -9,7 +9,7 @@ pub enum Value {
     Nil,
     Bool(bool),
     Number(f64),
-    String(String),
+    String(Alloc<String>),
     Primitive(PrimitiveReference),
     Pointer(Alloc<Value>),
     Function(Alloc<Function>),
@@ -31,6 +31,7 @@ impl Value {
 impl Collectible for Value {
     fn gc(&self) {
         match self {
+            Value::String(s) => s.gc(),
             Value::Pointer(p) => p.gc(),
             Value::Function(f) => f.gc(),
             Value::Class(c) => c.gc(),
@@ -123,12 +124,11 @@ impl Debug for PrimitiveReference {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::{size_of, size_of_val};
+    use std::mem::size_of;
 
     #[test]
     fn test_size() {
-        // TODO: This should be 16 bits but because we store String directly (instead of interning it) it takes 24 bits
-        assert_eq!(size_of::<Value>(), 24);
+        assert_eq!(size_of::<Value>(), 16);
     }
 
     #[test]
@@ -138,7 +138,6 @@ mod tests {
         assert_eq!(Value::Nil.size(), size_of::<Value>());
         assert_eq!(Value::Bool(false).size(), size_of::<Value>());
         assert_eq!(Value::Number(0.0).size(), size_of::<Value>());
-        assert_eq!(Value::String("test".to_string()).size(), size_of::<Value>() + size_of_val(&"test".to_string()));
         assert_eq!(Value::Primitive(PrimitiveReference::new(&primitive)).size(), size_of::<Value>());
     }
 }
