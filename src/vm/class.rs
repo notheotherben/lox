@@ -1,23 +1,24 @@
-use std::mem::size_of_val;
-use std::{collections::HashMap, mem::size_of};
+use std::mem::{size_of, size_of_val};
 use std::rc::Rc;
 use std::fmt::Display;
+
+use ahash::AHashMap;
 
 use super::{Alloc, Collectible, Function, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     pub name: Rc<String>,
-    pub statics: HashMap<String, Alloc<Function>>,
-    pub methods: HashMap<String, Alloc<Function>>,
+    pub statics: AHashMap<String, Alloc<Function>>,
+    pub methods: AHashMap<String, Alloc<Function>>,
 }
 
 impl Class {
     pub fn new<S: Into<String>>(name: S) -> Self {
         Self {
             name: Rc::new(name.into()),
-            methods: HashMap::new(),
-            statics: HashMap::new(),
+            methods: AHashMap::new(),
+            statics: AHashMap::new(),
         }
     }
 
@@ -66,14 +67,14 @@ impl Display for Class {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     pub class: Alloc<Class>,
-    pub fields: HashMap<String, Alloc<Value>>,
+    pub fields: AHashMap<String, Alloc<Value>>,
 }
 
 impl Instance {
     pub fn new(class: Alloc<Class>) -> Self {
         Self {
             class,
-            fields: HashMap::new(),
+            fields: AHashMap::new(),
         }
     }
 }

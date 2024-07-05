@@ -1,10 +1,12 @@
-use std::{collections::HashMap, ptr::NonNull};
+use std::ptr::NonNull;
+
+use ahash::AHashMap;
 
 use super::alloc::Allocation;
 
 #[derive(Default)]
 pub struct StringPool {
-    strings: HashMap<String, NonNull<Allocation<String>>>,
+    strings: AHashMap<String, NonNull<Allocation<String>>>,
     pub(crate) allocated_bytes: usize,
 }
 

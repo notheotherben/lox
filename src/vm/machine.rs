@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, LinkedList},
+    collections::LinkedList,
     time::SystemTime,
 };
 
@@ -21,7 +21,7 @@ pub struct VM {
     stack: Vec<Value>,
     open_upvalues: LinkedList<Alloc<Upvalue>>,
 
-    globals: HashMap<String, Alloc<Value>>,
+    globals: ahash::AHashMap<String, Alloc<Value>>,
 }
 
 macro_rules! op_binary {
@@ -1043,7 +1043,7 @@ impl Default for VM {
             stack: Vec::new(),
             open_upvalues: LinkedList::new(),
 
-            globals: HashMap::new(),
+            globals: ahash::AHashMap::new(),
         }
         .with_native("clock", 0, |_args| {
             Ok(Value::Number(
