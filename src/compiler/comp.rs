@@ -697,7 +697,7 @@ mod tests {
             let err = VM::default()
                 .with_output(_output.clone())
                 .with_debug()
-                .call(chunk)
+                .run_function(chunk)
                 .expect_err("expected error");
             assert_eq!(format!("{}", err), format!("{}", $val).trim());
         }};
@@ -713,7 +713,7 @@ mod tests {
             VM::default()
                 .with_output(output.clone())
                 .with_debug()
-                .call(chunk)
+                .run_function(chunk)
                 .expect("no errors");
             assert_eq!(output.to_string().trim(), format!("{}", $val).trim());
         }};

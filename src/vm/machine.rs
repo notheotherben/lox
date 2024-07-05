@@ -1,8 +1,17 @@
-use std::{collections::{HashMap, LinkedList}, time::SystemTime};
+use std::{
+    collections::{HashMap, LinkedList},
+    time::SystemTime,
+};
 
-use crate::{errors, Loc, LoxError, compiler::{Primitive, Function as CFunction, Chunk, OpCode, VarRef}};
+use crate::{
+    compiler::{self, Chunk, OpCode, Primitive, VarRef},
+    errors, Loc, LoxError,
+};
 
-use super::{alloc::Alloc, class::Instance, fun::BoundMethod, gc::Allocator, upvalue::Upvalue, value::PrimitiveReference, Class, Collectible, Frame, Function, Value, GC};
+use super::{
+    alloc::Alloc, class::Instance, fun::BoundMethod, gc::Allocator, upvalue::Upvalue,
+    value::PrimitiveReference, Class, Collectible, Frame, Function, Value, GC,
+};
 
 pub struct VM {
     debug: bool,
@@ -52,17 +61,20 @@ macro_rules! op_binary {
 
 macro_rules! frame_loc {
     ($frames:ident) => {
-        $frames.last().map(|f| f.last_location()).unwrap_or(Loc::Unknown)
+        $frames
+            .last()
+            .map(|f| f.last_location())
+            .unwrap_or(Loc::Unknown)
     };
 }
 
 impl VM {
-    pub fn call(&mut self, func: CFunction) -> Result<(), LoxError> {
+    pub fn run_function(mut self, func: compiler::Function) -> Result<(), LoxError> {
         let frame = Frame::root_function(func, &mut self.gc);
         self.run(frame)
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), LoxError> {
+    pub fn run_chunk(self, chunk: Chunk) -> Result<(), LoxError> {
         self.run(Frame::root_chunk(chunk))
     }
 
@@ -84,14 +96,13 @@ impl VM {
         fun: F,
     ) -> Self {
         let name = name.into();
-        let function = Value::Function(self.gc.alloc(Function::native(name.clone(), arity, move |vm, frame| {
-            fun(&vm.stack[frame.stack_offset + 1..])
-        })));
+        let function = Value::Function(self.gc.alloc(Function::native(
+            name.clone(),
+            arity,
+            move |vm, frame| fun(&vm.stack[frame.stack_offset + 1..]),
+        )));
 
-        self.globals.insert(
-            name,
-            self.gc.alloc(function),
-        );
+        self.globals.insert(name, self.gc.alloc(function));
         self
     }
 
@@ -108,7 +119,7 @@ impl VM {
             for upvalue in self.open_upvalues.iter() {
                 upvalue.gc();
             }
-    
+
             for global in self.globals.values() {
                 global.gc();
             }
@@ -119,7 +130,7 @@ impl VM {
         }
     }
 
-    fn run(&mut self, frame: Frame) -> Result<(), LoxError> {
+    fn run(mut self, frame: Frame) -> Result<(), LoxError> {
         let mut frames = Vec::with_capacity(1000);
         frames.push(frame);
 
@@ -135,7 +146,7 @@ impl VM {
                     Ok(true) => (),
                     Ok(false) => {
                         return Ok(());
-                    },
+                    }
                     Err(LoxError::Runtime(_loc, msg, advice)) => {
                         let mut stack = Vec::new();
 
@@ -144,7 +155,7 @@ impl VM {
                         }
 
                         return Err(errors::runtime_stacktrace(msg, advice, stack));
-                    },
+                    }
                     Err(LoxError::User(msg)) => {
                         let mut stack = Vec::new();
 
@@ -184,7 +195,7 @@ impl VM {
                         Primitive::Bool(b) => Value::Bool(*b),
                         Primitive::Number(n) => Value::Number(*n),
                         Primitive::String(s) => Value::String(self.gc.intern(s)),
-                        primitive => Value::Primitive(PrimitiveReference::new(primitive))
+                        primitive => Value::Primitive(PrimitiveReference::new(primitive)),
                     };
 
                     self.stack.push(value);
@@ -250,9 +261,7 @@ impl VM {
             OpCode::GetUpvalue(idx) => {
                 if let Some(upvalue) = frames.last().unwrap().upvalues.get(idx) {
                     match upvalue.as_ref() {
-                        Upvalue::Closed(value) => {
-                            self.stack.push(value.cloned())
-                        },
+                        Upvalue::Closed(value) => self.stack.push(value.cloned()),
                         Upvalue::Open(idx) => {
                             let value = self.stack.get(*idx)
                                 .ok_or_else(|| errors::runtime(
@@ -270,7 +279,7 @@ impl VM {
                         "Make sure that you are passing valid upvalue indices to the virtual machine."
                     ));
                 }
-            },
+            }
             OpCode::SetUpvalue(idx) => {
                 let value = self.pop()?;
 
@@ -278,10 +287,8 @@ impl VM {
                     match upvalue.as_ref() {
                         Upvalue::Closed(val) => {
                             val.replace_value(value);
-                        },
-                        Upvalue::Open(idx) => {
-                            self.stack[*idx] = value
                         }
+                        Upvalue::Open(idx) => self.stack[*idx] = value,
                     }
                 } else {
                     return Err(errors::runtime(
@@ -290,15 +297,13 @@ impl VM {
                         "Make sure that you are passing valid upvalue indices to the virtual machine."
                     ));
                 }
-            },
+            }
 
             OpCode::GetLocal(idx) => {
-                if let Some(value) = self.stack.get(
-                    frames.last()
-                        .map(|f| f.stack_offset)
-                        .unwrap_or_default()
-                        + idx,
-                ) {
+                if let Some(value) = self
+                    .stack
+                    .get(frames.last().map(|f| f.stack_offset).unwrap_or_default() + idx)
+                {
                     self.stack.push(value.clone());
                 } else {
                     return Err(errors::runtime(
@@ -309,12 +314,8 @@ impl VM {
                 }
             }
             OpCode::SetLocal(idx) => {
-                let idx = frames
-                    .last()
-                    .map(|f| f.stack_offset)
-                    .unwrap_or_default()
-                    + idx;
-                
+                let idx = frames.last().map(|f| f.stack_offset).unwrap_or_default() + idx;
+
                 let value = self.peek()?;
 
                 match self.stack.get(idx) {
@@ -341,14 +342,20 @@ impl VM {
                     let value = self.pop()?;
                     match self.pop()? {
                         Value::Instance(mut instance) => {
-                            instance.as_mut().fields.insert(key, self.gc.alloc(value.clone()));
+                            instance
+                                .as_mut()
+                                .fields
+                                .insert(key, self.gc.alloc(value.clone()));
                             self.push(value);
-                        },
+                        }
                         value => {
                             return Err(errors::runtime(
                                 frame_loc!(frames),
-                                format!("Attempted to set a property on a non-instance value '{}'.", value),
-                                "Make sure that you are setting properties on instances."
+                                format!(
+                                    "Attempted to set a property on a non-instance value '{}'.",
+                                    value
+                                ),
+                                "Make sure that you are setting properties on instances.",
                             ));
                         }
                     }
@@ -368,22 +375,33 @@ impl VM {
                 match (left, right) {
                     (Value::Number(left), Value::Number(right)) => {
                         self.stack.push(Value::Number(left + right));
-                    },
+                    }
                     (Value::String(left), right) => {
-                        self.stack.push(Value::String(self.gc.intern(&format!("{}{}", left.as_ref(), right))));
-                    },
+                        self.stack.push(Value::String(self.gc.intern(&format!(
+                            "{}{}",
+                            left.as_ref(),
+                            right
+                        ))));
+                    }
                     (left, Value::String(right)) => {
-                        self.stack.push(Value::String(self.gc.intern(&format!("{}{}", left, right.as_ref()))));
-                    },
+                        self.stack.push(Value::String(self.gc.intern(&format!(
+                            "{}{}",
+                            left,
+                            right.as_ref()
+                        ))));
+                    }
                     (left, right) => {
                         return Err(errors::runtime(
                             frame_loc!(frames),
-                            format!("Operands must be two numbers or two strings, but got {} and {}.", left, right),
-                            "Make sure that you are passing numbers or strings to the + operator."
+                            format!(
+                                "Operands must be two numbers or two strings, but got {} and {}.",
+                                left, right
+                            ),
+                            "Make sure that you are passing numbers or strings to the + operator.",
                         ));
                     }
                 }
-            },
+            }
             OpCode::Subtract => {
                 op_binary!(self(frame_loc!(frames), left, right), Number: (left - right) => Number)
             }
@@ -417,11 +435,11 @@ impl VM {
 
             OpCode::Pop => {
                 self.pop()?;
-            },
+            }
             OpCode::Print => {
                 let value = self.pop()?;
                 writeln!(self.output, "{}", value)?;
-            },
+            }
 
             OpCode::Call(call_arity) => {
                 if frames.len() >= 1000 {
@@ -437,13 +455,13 @@ impl VM {
                     return Err(errors::runtime(
                         frame_loc!(frames),
                         "Callee could not be retrieved from the stack based on the known calling convention.",
-                        "Please report this issue to us on GitHub with example code."))
+                        "Please report this issue to us on GitHub with example code."));
                 }
 
                 let function = function.unwrap().clone();
 
                 self.call_function(frames, &function, call_arity, false)?;
-            },
+            }
             OpCode::Invoke(property, call_arity) => {
                 if frames.len() >= 1000 {
                     return Err(errors::runtime(
@@ -461,12 +479,16 @@ impl VM {
                     "Make sure that you are passing valid object references to the virtual machine."
                 ))?.clone();
 
-                if let Some(Primitive::String(key)) = frames.last().and_then(|f| f.constant(property)) {
+                if let Some(Primitive::String(key)) =
+                    frames.last().and_then(|f| f.constant(property))
+                {
                     match obj {
                         Value::Instance(instance) => {
                             if let Some(value) = instance.as_ref().fields.get(key) {
                                 self.call_function(frames, value.as_ref(), call_arity, true)?;
-                            } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(key) {
+                            } else if let Some(method) =
+                                instance.as_ref().class.as_ref().methods.get(key)
+                            {
                                 if method.as_ref().arity() != call_arity {
                                     return Err(errors::runtime(
                                         frame_loc!(frames),
@@ -474,7 +496,7 @@ impl VM {
                                         "Make sure that you are passing the correct number of arguments to the function."
                                     ));
                                 }
-                
+
                                 if let Function::Closure { .. } = method.as_ref() {
                                     let self_idx = self.stack.len() - call_arity - 1;
                                     self.stack[self_idx] = Value::Instance(instance);
@@ -483,7 +505,7 @@ impl VM {
                                     return Err(errors::runtime(
                                         frame_loc!(frames),
                                         "Attempted to call a non-closure bound method.",
-                                        "Make sure that you are calling a closure bound method."
+                                        "Make sure that you are calling a closure bound method.",
                                     ));
                                 }
                             } else {
@@ -491,14 +513,17 @@ impl VM {
                                     frame_loc!(frames),
                                     format!("Property '{}' not found on instance.", key),
                                     "Make sure that you are accessing valid properties on instances."
-                                ))
+                                ));
                             }
-                        },
+                        }
                         value => {
                             return Err(errors::runtime(
                                 frame_loc!(frames),
-                                format!("Attempted to get a property from a non-instance value '{}'.", value),
-                                "Make sure that you are accessing properties on instances."
+                                format!(
+                                    "Attempted to get a property from a non-instance value '{}'.",
+                                    value
+                                ),
+                                "Make sure that you are accessing properties on instances.",
                             ))
                         }
                     }
@@ -507,9 +532,9 @@ impl VM {
                         frame_loc!(frames),
                         "Invalid constant index in byte code.",
                         "Make sure that you are passing valid constant indices to the virtual machine."
-                    ))
+                    ));
                 }
-            },
+            }
             OpCode::InvokeSuper(property, call_arity) => {
                 if frames.len() >= 1000 {
                     return Err(errors::runtime(
@@ -519,11 +544,16 @@ impl VM {
                     ));
                 }
 
-                let method = frames.last().and_then(|f| f.constant(property)).ok_or_else(|| errors::runtime(
+                let method = frames
+                    .last()
+                    .and_then(|f| f.constant(property))
+                    .ok_or_else(|| {
+                        errors::runtime(
                     frame_loc!(frames),
                     "Could not retrieve method name from the constant pool.",
                     "Make sure that you are passing valid constant indices to the virtual machine."
-                ))?;
+                )
+                    })?;
 
                 let superclass = self.pop()?;
                 if let Value::Class(superclass) = superclass {
@@ -543,7 +573,7 @@ impl VM {
                         "Make sure that you are passing the correct stack frames to the OP_INVOKE_SUPER opcode."
                     ));
                 }
-            },
+            }
             OpCode::Closure(idx) => {
                 let value = if let Some(value) = frames.last().and_then(|f| f.constant(idx)) {
                     value
@@ -612,12 +642,12 @@ impl VM {
                             "Please report this issue to us on GitHub with example code."))
                     }
                 }
-            },
+            }
             OpCode::CloseUpvalue => {
                 self.close_upvalues(self.stack.len() - 1)?;
                 self.pop()?;
                 self.collect(frames);
-            },
+            }
             OpCode::Return => {
                 let result = self.pop()?;
                 if let Some(frame) = frames.pop() {
@@ -631,14 +661,19 @@ impl VM {
 
                 self.push(result);
                 self.collect(frames);
-            },
+            }
 
             OpCode::Class(name) => {
-                let name = frames.last().and_then(|f| f.constant(name)).ok_or_else(|| errors::runtime(
+                let name = frames
+                    .last()
+                    .and_then(|f| f.constant(name))
+                    .ok_or_else(|| {
+                        errors::runtime(
                     frame_loc!(frames),
                     "Could not retrieve class name from the constant pool.",
                     "Make sure that you are passing valid constant indices to the virtual machine."
-                ))?;
+                )
+                    })?;
 
                 if let Primitive::String(name) = name {
                     let class = self.gc.alloc(Class::new(name));
@@ -651,7 +686,7 @@ impl VM {
                         "Please report this issue on GitHub with example code reproducing the issue."
                     ));
                 }
-            },
+            }
             OpCode::Inherit => {
                 let subclass = self.pop()?;
                 let superclass = self.peek()?;
@@ -659,14 +694,14 @@ impl VM {
                 match (subclass, superclass) {
                     (Value::Class(mut subclass), Value::Class(superclass)) => {
                         subclass.as_mut().inherit(superclass.as_ref());
-                    },
+                    }
                     (Value::Class(subclass), superclass) => {
                         return Err(errors::runtime(
                             frame_loc!(frames),
                             format!("{} attempted to inherit from {} which is not a valid class.", subclass, superclass),
                             "Ensure that the value you are inheriting from is a valid class reference."
                         ));
-                    },
+                    }
                     _ => {
                         return Err(errors::runtime(
                             frame_loc!(frames),
@@ -675,13 +710,18 @@ impl VM {
                         ));
                     }
                 }
-            },
+            }
             OpCode::Method(name) => {
-                let name = frames.last().and_then(|f| f.constant(name)).ok_or_else(|| errors::runtime(
+                let name = frames
+                    .last()
+                    .and_then(|f| f.constant(name))
+                    .ok_or_else(|| {
+                        errors::runtime(
                     frame_loc!(frames),
                     "Could not retrieve class name from the constant pool.",
                     "Make sure that you are passing valid constant indices to the virtual machine."
-                ))?;
+                )
+                    })?;
 
                 let method = self.pop()?;
                 let class = self.peek()?;
@@ -689,22 +729,27 @@ impl VM {
                 match (class, method) {
                     (Value::Class(mut class), Value::Function(method)) => {
                         class.as_mut().methods.insert(name.to_string(), method);
-                    },
+                    }
                     (class, _) => {
                         return Err(errors::runtime(
                             frame_loc!(frames),
-                            format!("Attempted to add a method to a non-class value '{}'.", class),
-                            "Make sure that you are adding methods to class values."
+                            format!(
+                                "Attempted to add a method to a non-class value '{}'.",
+                                class
+                            ),
+                            "Make sure that you are adding methods to class values.",
                         ));
                     }
                 }
-            },
+            }
             OpCode::GetSuper(idx) => {
-                let method = frames.last().and_then(|f| f.constant(idx)).ok_or_else(|| errors::runtime(
+                let method = frames.last().and_then(|f| f.constant(idx)).ok_or_else(|| {
+                    errors::runtime(
                     frame_loc!(frames),
                     "Could not retrieve method name from the constant pool.",
                     "Make sure that you are passing valid constant indices to the virtual machine."
-                ))?;
+                )
+                })?;
 
                 let superclass = self.pop()?;
                 let instance = self.peek()?;
@@ -721,19 +766,25 @@ impl VM {
                                 "Make sure that the method you are attempting to access exists in the superclass."
                             ));
                         }
-                    },
+                    }
                     (Value::Instance(_), superclass) => {
                         return Err(errors::runtime(
                             frame_loc!(frames),
-                            format!("Attempted to get a method from a non-class value '{}'.", superclass),
-                            "Make sure that you are getting methods from class values."
+                            format!(
+                                "Attempted to get a method from a non-class value '{}'.",
+                                superclass
+                            ),
+                            "Make sure that you are getting methods from class values.",
                         ));
-                    },
+                    }
                     (instance, _) => {
                         return Err(errors::runtime(
                             frame_loc!(frames),
-                            format!("Attempted to get a method from a non-instance value '{}'.", instance),
-                            "Make sure that you are getting methods from instance values."
+                            format!(
+                                "Attempted to get a method from a non-instance value '{}'.",
+                                instance
+                            ),
+                            "Make sure that you are getting methods from instance values.",
                         ));
                     }
                 }
@@ -764,28 +815,30 @@ impl VM {
     }
 
     fn pop(&mut self) -> Result<Value, LoxError> {
-        if let Some(value) = self.stack.pop() {
-            Ok(value)
-        } else {
-            Err(errors::system(
+        self.stack.pop().ok_or_else(|| {
+            errors::system(
                 "Attempted to pop with no values on the stack.",
                 "Don't try to do this? o.O",
-            ))
-        }
+            )
+        })
     }
 
     fn peek(&self) -> Result<&Value, LoxError> {
-        if let Some(value) = self.stack.last() {
-            Ok(value)
-        } else {
-            Err(errors::system(
+        self.stack.last().ok_or_else(|| {
+            errors::system(
                 "Attempted to peek with no values on the stack.",
                 "Don't try to do this? o.O",
-            ))
-        }
+            )
+        })
     }
 
-    fn call_function(&mut self, frames: &mut Vec<Frame>, function: &Value, call_arity: usize, fast_call: bool) -> Result<(), LoxError> {
+    fn call_function(
+        &mut self,
+        frames: &mut Vec<Frame>,
+        function: &Value,
+        call_arity: usize,
+        fast_call: bool,
+    ) -> Result<(), LoxError> {
         match function {
             Value::Function(function) => {
                 if function.as_ref().arity() != call_arity {
@@ -795,11 +848,11 @@ impl VM {
                         "Make sure that you are passing the correct number of arguments to the function."
                     ));
                 }
-                
+
                 match function.as_ref() {
-                    Function::Closure {..} => {
+                    Function::Closure { .. } => {
                         frames.push(Frame::call(*function, self.stack.len(), fast_call));
-                    },
+                    }
                     Function::Native { fun, .. } => {
                         let native = fun.clone();
 
@@ -809,9 +862,9 @@ impl VM {
                         let call_frame = frames.pop().unwrap();
                         self.stack.truncate(call_frame.stack_offset);
                         self.push(result);
-                    },
+                    }
                 }
-            },
+            }
             Value::BoundMethod(bound) => {
                 let BoundMethod(instance, function) = bound.as_ref();
                 if function.as_ref().arity() != call_arity {
@@ -830,7 +883,7 @@ impl VM {
                     return Err(errors::runtime(
                         frame_loc!(frames),
                         "Attempted to call a non-closure bound method.",
-                        "Make sure that you are calling a closure bound method."
+                        "Make sure that you are calling a closure bound method.",
                     ));
                 }
             }
@@ -864,7 +917,7 @@ impl VM {
                 }
 
                 self.collect(frames);
-            },
+            }
             non_function_value => {
                 return Err(errors::runtime(
                     frame_loc!(frames),
@@ -879,7 +932,8 @@ impl VM {
 
     fn close_upvalues(&mut self, stack_top: usize) -> Result<(), LoxError> {
         let mut cursor = self.open_upvalues.cursor_front_mut();
-        while matches!(cursor.current(), Some(u) if matches!(u.as_ref(), Upvalue::Open(i) if *i >= stack_top)) {
+        while matches!(cursor.current(), Some(u) if matches!(u.as_ref(), Upvalue::Open(i) if *i >= stack_top))
+        {
             let mut upvalue = cursor.remove_current().unwrap();
             if let Upvalue::Open(idx) = upvalue.as_ref() {
                 let idx = *idx;
@@ -904,7 +958,12 @@ impl VM {
         Ok(())
     }
 
-    fn get_property(&mut self, frames: &[Frame], instance: Value, idx: usize) -> Result<Value, LoxError> {
+    fn get_property(
+        &mut self,
+        frames: &[Frame],
+        instance: Value,
+        idx: usize,
+    ) -> Result<Value, LoxError> {
         if let Some(Primitive::String(key)) = frames.last().and_then(|f| f.constant(idx)) {
             match instance {
                 Value::Instance(instance) => {
@@ -917,23 +976,24 @@ impl VM {
                         Err(errors::runtime(
                             frame_loc!(frames),
                             format!("Property '{}' not found on instance.", key),
-                            "Make sure that you are accessing valid properties on instances."
+                            "Make sure that you are accessing valid properties on instances.",
                         ))
                     }
-                },
-                value => {
-                    Err(errors::runtime(
-                        frame_loc!(frames),
-                        format!("Attempted to get a property from a non-instance value '{}'.", value),
-                        "Make sure that you are accessing properties on instances."
-                    ))
                 }
+                value => Err(errors::runtime(
+                    frame_loc!(frames),
+                    format!(
+                        "Attempted to get a property from a non-instance value '{}'.",
+                        value
+                    ),
+                    "Make sure that you are accessing properties on instances.",
+                )),
             }
         } else {
             Err(errors::runtime(
                 frame_loc!(frames),
                 "Invalid constant index in byte code.",
-                "Make sure that you are passing valid constant indices to the virtual machine."
+                "Make sure that you are passing valid constant indices to the virtual machine.",
             ))
         }
     }
@@ -950,9 +1010,11 @@ impl VM {
         eprintln!();
 
         eprint!("Locals:");
-        for value in self.stack.iter().skip(
-            frames.last().map(|f| f.stack_offset).unwrap_or_default()
-        ) {
+        for value in self
+            .stack
+            .iter()
+            .skip(frames.last().map(|f| f.stack_offset).unwrap_or_default())
+        {
             eprint!("[{}] ", value);
         }
         eprintln!();
@@ -1024,12 +1086,12 @@ mod tests {
                 $(
                     let op = OpCode::$code$((
                         $($param,)*
-                    
+
                         $(
                             chunk.add_constant(Primitive::$ty($val.into())),
                         )*
                     ))?;
-    
+
                     chunk.write(op, $crate::Loc::new(0));
                 )*
 
@@ -1043,7 +1105,7 @@ mod tests {
             let output = Box::new(CaptureOutput::default());
             VM::default()
                 .with_output(output.clone())
-                .interpret($chunk)
+                .run_chunk($chunk)
                 .expect("no errors");
             assert_eq!(output.to_string().trim(), format!("{}", $val).trim());
         }};

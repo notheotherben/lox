@@ -32,7 +32,7 @@ fn run_file(filename: &str, vm: VM) -> Result<(), LoxError> {
     run(content, vm)
 }
 
-fn run(source: &str, mut vm: VM) -> Result<(), LoxError> {
+fn run(source: &str, vm: VM) -> Result<(), LoxError> {
     let lexer = lox::lexer::Scanner::new(source);
     let mut had_error = false;
 
@@ -57,5 +57,5 @@ fn run(source: &str, mut vm: VM) -> Result<(), LoxError> {
     }
 
     let chunk = lox::compiler::compile(&stmts)?;
-    vm.call(chunk)
+    vm.run_function(chunk)
 }

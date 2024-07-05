@@ -11,7 +11,7 @@ fn extract_expected_output(content: &str) -> ExpectedOutput {
     let mut expected_output = String::new();
 
     for line in content.lines() {
-        if let Some((_prefix, suffix)) = line.split_once("// ") {
+        if let Some((_, suffix)) = line.split_once("// ") {
             if suffix.starts_with("expect:") {
                 expected_output
                     .push_str(suffix.strip_prefix("expect: ").expect("prefix is present"));
@@ -90,7 +90,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
     if let Err(err) = lox::vm::VM::default()
         .with_output(Box::new(out.clone()))
         .with_debug()
-        .call(chunk)
+        .run_function(chunk)
     {
         eprintln!("{}", err);
         had_error = true;

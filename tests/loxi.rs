@@ -11,7 +11,7 @@ fn extract_expected_output(content: &str) -> ExpectedOutput {
     let mut expected_output = String::new();
 
     for line in content.lines() {
-        if let Some((prefix, suffix)) = line.split_once("// ") {
+        if let Some((_, suffix)) = line.split_once("// ") {
             if suffix.starts_with("expect:") {
                 expected_output.push_str(suffix.strip_prefix("expect: ").expect("prefix is present"));
                 expected_output.push('\n');
