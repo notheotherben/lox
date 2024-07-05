@@ -35,6 +35,7 @@ pub struct GC {
 
     strings: StringPool,
 
+    min_checkpoint: usize,
     growth_factor: usize,
     checkpoint: usize,
 }
@@ -68,6 +69,9 @@ impl GC {
         self.sweep();
 
         self.checkpoint = self.allocated_bytes() * self.growth_factor;
+        if self.checkpoint < self.min_checkpoint {
+            self.checkpoint = self.min_checkpoint;
+        }
 
         GCStats {
             allocated: self.allocated_bytes(),
@@ -111,6 +115,8 @@ impl GC {
 
 impl Default for GC {
     fn default() -> Self {
+        let gc_min_checkpoint = 1024 * 1024;
+
         Self {
             values: Default::default(),
             functions: Default::default(),
@@ -120,7 +126,8 @@ impl Default for GC {
             upvalues: Default::default(),
             strings: Default::default(),
             growth_factor: 2,
-            checkpoint: 1024,
+            min_checkpoint: gc_min_checkpoint,
+            checkpoint: gc_min_checkpoint,
         }
     }
 
