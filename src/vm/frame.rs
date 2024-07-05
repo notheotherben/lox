@@ -9,7 +9,7 @@ use crate::compiler::Function as CFunction;
 pub struct Frame {
     pub name: Rc<String>,
     pub chunk: Rc<Chunk>,
-    pub upvalues: Rc<Vec<Alloc<Upvalue>>>,
+    pub upvalues: Vec<Alloc<Upvalue>>,
     pub stack_offset: usize,
     pub ip: usize,
     pub fast_call: bool,
@@ -34,7 +34,7 @@ impl Frame {
         Frame {
             name,
             chunk,
-            upvalues: Rc::new(upvalues),
+            upvalues,
             stack_offset: 0,
             ip: 0,
             fast_call: true,
@@ -45,7 +45,7 @@ impl Frame {
         Frame {
             name: Rc::new(String::default()),
             chunk: Rc::new(chunk),
-            upvalues: Rc::new(Vec::new()),
+            upvalues: Vec::new(),
             stack_offset: 0,
             ip: 0,
             fast_call: true,
@@ -58,7 +58,7 @@ impl Frame {
                 Frame {
                     name: name.clone(),
                     chunk: Rc::new(Chunk::default()),
-                    upvalues: Rc::new(Vec::new()),
+                    upvalues: Vec::new(),
                     stack_offset: stack_size - *arity - 1,
                     ip: 0,
                     fast_call,
@@ -68,7 +68,7 @@ impl Frame {
                 Frame {
                     name: name.clone(),
                     chunk: chunk.clone(),
-                    upvalues: Rc::new(upvalues.to_vec()),
+                    upvalues: upvalues.to_vec(),
                     stack_offset: stack_size - *arity - 1,
                     ip: 0,
                     fast_call,
