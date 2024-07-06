@@ -9,13 +9,13 @@ use super::{alloc::Alloc, class::Instance, upvalue::Upvalue, Collectible, Value}
 #[derive(Clone)]
 pub enum Function {
     Native {
-        name: Rc<String>,
+        name: Alloc<String>,
         arity: usize,
         #[allow(clippy::type_complexity)]
         fun: Rc<Box<dyn Fn(&[Value]) -> Result<Value, LoxError> + 'static>>,
     },
     Closure {
-        name: Rc<String>,
+        name: Alloc<String>,
         arity: usize,
         upvalues: Vec<Alloc<Upvalue>>,
         chunk: Rc<Chunk>,
@@ -23,22 +23,22 @@ pub enum Function {
 }
 
 impl Function {
-    pub fn capture<C: FnMut(&[VarRef]) -> Result<Vec<Alloc<Upvalue>>, LoxError>>(fun: &CFunction, mut capture: C) -> Result<Self, LoxError> {
+    pub fn capture<C: FnMut(&[VarRef]) -> Result<Vec<Alloc<Upvalue>>, LoxError>>(name: Alloc<String>, fun: &CFunction, mut capture: C) -> Result<Self, LoxError> {
         Ok(Function::Closure {
-            name: fun.name.clone(),
+            name,
             arity: fun.arity,
             upvalues: capture(&fun.upvalues)?,
             chunk: fun.chunk.clone(),
         })
     }
     
-    pub fn native<N: Into<String>, F: Fn(&[Value]) -> Result<Value, LoxError> + 'static>(
-        name: N,
+    pub fn native<F: Fn(&[Value]) -> Result<Value, LoxError> + 'static>(
+        name: Alloc<String>,
         arity: usize,
         fun: F,
     ) -> Self {
         Function::Native {
-            name: Rc::new(name.into()),
+            name,
             arity,
             fun: Rc::new(Box::new(fun)),
         }

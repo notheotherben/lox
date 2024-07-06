@@ -69,8 +69,9 @@ impl VM {
         self.run(frame)
     }
 
-    pub fn run_chunk(self, chunk: Chunk) -> Result<(), LoxError> {
-        self.run(Frame::root_chunk(chunk))
+    pub fn run_chunk(mut self, chunk: Chunk) -> Result<(), LoxError> {
+        let frame = Frame::root_chunk(chunk, &mut self.gc);
+        self.run(frame)
     }
 
     pub fn with_output(self, output: Box<dyn std::io::Write>) -> Self {
@@ -94,8 +95,9 @@ impl VM {
         fun: F,
     ) -> Self {
         let name = name.into();
+        let name_alloc = self.gc.intern(&name);
 
-        let function = self.gc.alloc(Function::native(name.clone(), arity, fun));
+        let function = self.gc.alloc(Function::native(name_alloc, arity, fun));
 
         self.globals
             .insert(name, self.gc.alloc(Value::Function(function)));
@@ -726,7 +728,8 @@ impl OpRunner<&mut VMState, ()> for VM {
 
     fn visit_closure(&mut self, state: &mut VMState, function: usize) -> Result<(), LoxError> {
         let function = state.callframes.active()?.constant(function)?.as_function()?;
-        let closure = Function::capture(function, |varrefs| {
+        let name = self.gc.intern(function.name.as_ref());
+        let closure = Function::capture(name, function, |varrefs| {
             let mut upvalues = Vec::with_capacity(varrefs.len());
             for varref in varrefs {
                 match varref {

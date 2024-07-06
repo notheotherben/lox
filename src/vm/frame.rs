@@ -7,7 +7,7 @@ use crate::compiler::Function as CFunction;
 
 #[derive(Clone)]
 pub struct Frame {
-    pub name: Rc<String>,
+    pub name: Alloc<String>,
     pub chunk: Rc<Chunk>,
     pub upvalues: Vec<Alloc<Upvalue>>,
     pub stack_offset: usize,
@@ -22,6 +22,8 @@ impl Frame {
         if arity != 0 {
             panic!("Root frame must have zero arity.");
         }
+
+        let name = gc.intern(name.as_ref());
 
         let upvalues = upvalues.iter().map(|upvalue| {
             if let VarRef::Local(idx) = upvalue {
@@ -41,9 +43,10 @@ impl Frame {
         }
     }
 
-    pub fn root_chunk(chunk: Chunk) -> Frame {
+    pub fn root_chunk(chunk: Chunk, gc: &mut GC) -> Frame {
+        let name = gc.intern(&"".to_string());
         Frame {
-            name: Rc::new(String::default()),
+            name,
             chunk: Rc::new(chunk),
             upvalues: Vec::new(),
             stack_offset: 0,
@@ -56,7 +59,7 @@ impl Frame {
         match fun.as_ref() {
             Function::Native { name, arity, .. } => {
                 Frame {
-                    name: name.clone(),
+                    name: *name,
                     chunk: Rc::new(Chunk::default()),
                     upvalues: Vec::new(),
                     stack_offset: stack_size - *arity - 1,
@@ -66,7 +69,7 @@ impl Frame {
             }
             Function::Closure { name, arity, upvalues, chunk } => {
                 Frame {
-                    name: name.clone(),
+                    name: *name,
                     chunk: chunk.clone(),
                     upvalues: upvalues.to_vec(),
                     stack_offset: stack_size - *arity - 1,
@@ -113,7 +116,7 @@ impl Frame {
 
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if self.name.is_empty() {
+        if self.name.as_ref().is_empty() {
             write!(f, "[{}] in script", self.chunk.location(self.ip))
         } else {
             write!(f, "[{}] in {}()", self.chunk.location(self.ip), self.name)

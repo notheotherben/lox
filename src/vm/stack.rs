@@ -99,10 +99,8 @@ impl Stack {
                 "Make sure that your bytecode is not issuing an invalid instruction given the state of the system.",
             ))
         } else {
-            let value = self.stack[self.depth - 1];
-            self.stack[self.depth - 1] = Value::Nil;
             self.depth -= 1;
-            Ok(value)
+            Ok(std::mem::replace(&mut self.stack[self.depth], Value::Nil))
         }
     }
 
