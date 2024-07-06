@@ -521,11 +521,15 @@ impl OpRunner<&mut VMState, ()> for VM {
         let value = state.stack.pop()?;
         let object = state.stack.pop()?;
         if let Value::Instance(mut instance) = object {
-            let key = state.callframes.active()?.constant(name)?.as_string()?.clone();
-            instance
-                .as_mut()
-                .fields
-                .insert(key.clone(), self.gc.alloc(value));
+            let key = state.callframes.active()?.constant(name)?.as_string()?;
+            if let Some(field) = instance.as_mut().fields.get_mut(key) {
+                *field = self.gc.alloc(value);
+            } else {
+                instance
+                    .as_mut()
+                    .fields
+                    .insert(key.clone(), self.gc.alloc(value));
+            }
             state.stack.push(value)?;
             self.collect(state);
             Ok(())
