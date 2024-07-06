@@ -1,11 +1,12 @@
-use std::{fmt::{Display, Debug}, ptr::NonNull};
+use std::{fmt::{Debug, Display}, ptr::NonNull};
 
 use crate::compiler::Primitive;
 
 use super::{fun::BoundMethod, Alloc, Class, Collectible, Function, Instance};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Default, Copy, Clone, Debug)]
 pub enum Value {
+    #[default]
     Nil,
     Bool(bool),
     Number(f64),

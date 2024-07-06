@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    alloc::Alloc, callstack::CallStack, class::Instance, fun::BoundMethod, gc::Allocator, upvalue::Upvalue, value::PrimitiveReference, Class, Collectible, Frame, Function, Value, GC
+    alloc::Alloc, callstack::CallStack, class::Instance, fun::BoundMethod, gc::Allocator, stack::Stack, upvalue::Upvalue, value::PrimitiveReference, Class, Collectible, Frame, Function, Value, GC
 };
 
 pub struct VM {
@@ -20,9 +20,9 @@ pub struct VM {
     gc: GC,
 }
 
+#[derive(Default)]
 struct VMState {
-    stack: Vec<Value>,
-
+    stack: Stack,
     callframes: CallStack,
 
     open_upvalues: LinkedList<Alloc<Upvalue>>,
@@ -31,26 +31,26 @@ struct VMState {
 macro_rules! op_binary {
     ($self:ident ($left:ident, $right:ident), * : $op:tt => $res:ident) => {
         {
-            let $right = $self.stack_pop()?;
-            let $left = $self.stack_pop()?;
+            let $right = $self.stack.pop()?;
+            let $left = $self.stack.pop()?;
 
             #[allow(unused_parens)]
             let result = $op;
-            $self.stack.push(Value::$res(result))
+            $self.stack.push(Value::$res(result))?
         }
     };
 
     ($self:ident ($left:ident, $right:ident), $($src:ident : $op:tt => $res:ident),+) => {
         {
-            let right = $self.stack_pop()?;
-            let left = $self.stack_pop()?;
+            let right = $self.stack.pop()?;
+            let left = $self.stack.pop()?;
 
             #[allow(unused_parens)]
             match (left, right) {
                 $(
                     (Value::$src($left), Value::$src($right)) => {
                         let result = $op;
-                        $self.stack.push(Value::$res(result))
+                        $self.stack.push(Value::$res(result))?
                     }
                 )+
                 (left, right) => return Err(errors::runtime_stacktrace(
@@ -114,10 +114,7 @@ impl VM {
                 }
 
                 state.callframes.active_mut()?.ip += 1;
-                match self.visit_op(state, op) {
-                    Ok(new_state) => state = new_state,
-                    Err(err) => return Err(err),
-                }
+                self.visit_op(&mut state, op)?;
             } else if let Some(frame) = state.callframes.pop() {
                 state.close_upvalues(&mut self.gc, frame.stack_offset)?;
                 state.stack.truncate(frame.stack_offset);
@@ -197,24 +194,6 @@ impl Default for VM {
 }
 
 impl VMState {
-    fn stack_pop(&mut self) -> Result<Value, LoxError> {
-        self.stack.pop().ok_or_else(|| {
-            errors::system(
-                "Attempted to pop with no values on the stack.",
-                "Don't try to do this? o.O",
-            )
-        })
-    }
-
-    fn stack_peek(&self) -> Result<&Value, LoxError> {
-        self.stack.last().ok_or_else(|| {
-            errors::system(
-                "Attempted to peek with no values on the stack.",
-                "Don't try to do this? o.O",
-            )
-        })
-    }
-
     fn get_object_property(&mut self, gc: &mut GC, object: Value, name: usize) -> Result<Value, LoxError> {
         let key = self.callframes.active()?.constant(name)?.as_string()?;
         match object {
@@ -251,21 +230,11 @@ impl VMState {
             if let Upvalue::Open(idx) = upvalue.as_ref() {
                 let idx = *idx;
 
-                // Get the value from the stack
-                let value = self.stack.get(idx)
-                    .copied()
-                    .ok_or_else(|| errors::runtime_stacktrace(
-                        format!("Attempted to access local upvalue at a locals index {} which is invalid.", idx),
-                        "Please report this issue to us on GitHub with example code.",
-                        self.callframes.stacktrace(),
-                    ))?;
-
-                // Move it into the heap
-                let value = gc.alloc(value);
+                let value = gc.alloc(self.stack.get(idx)?);
 
                 // And replace the stack value with a pointer to the heap value
                 upvalue.close(value);
-                self.stack[idx] = Value::Pointer(value);
+                self.stack.replace(idx, Value::Pointer(value))?;
             }
         }
 
@@ -300,7 +269,7 @@ impl VMState {
                         self.callframes
                             .push(Frame::call(*function, self.stack.len(), fast_call))?;
 
-                        let result = native(&self.stack[self.stack.len() - call_arity..]).map_err(|e| {
+                        let result = native(self.stack.slice_from_top(call_arity)?).map_err(|e| {
                             match e {
                                 LoxError::Runtime(_, msg, advice) => errors::runtime_stacktrace(msg, advice, self.callframes.stacktrace()),
                                 LoxError::User(msg) => errors::user_stacktrace(msg, self.callframes.stacktrace()),
@@ -309,7 +278,10 @@ impl VMState {
                         })?;
                         let call_frame = self.callframes.pop().unwrap();
                         self.stack.truncate(call_frame.stack_offset);
-                        self.stack.push(result);
+                        if !fast_call {
+                            self.stack.pop()?;
+                        }
+                        self.stack.push(result)?;
                     }
                 }
             }
@@ -324,8 +296,7 @@ impl VMState {
                 }
 
                 if let Function::Closure { .. } = function.as_ref() {
-                    let self_idx = self.stack.len() - call_arity - 1;
-                    self.stack[self_idx] = Value::Instance(*instance);
+                    self.stack.replace_from_top(call_arity + 1, Value::Instance(*instance))?;
                     self.callframes
                         .push(Frame::call(*function, self.stack.len(), fast_call))?;
                 } else {
@@ -349,8 +320,7 @@ impl VMState {
                     }
 
                     // Replace the class reference with the instance reference before invoking the init method
-                    let callee_idx = self.stack.len() - call_arity - 1;
-                    self.stack[callee_idx] = Value::Instance(instance);
+                    self.stack.replace_from_top(call_arity + 1, Value::Instance(instance))?;
 
                     self.callframes
                         .push(Frame::call(*init, self.stack.len(), fast_call))?;
@@ -363,7 +333,7 @@ impl VMState {
                 } else {
                     // Remove the class reference and "this" from the stack as we would if we actually ran the function
                     self.stack.truncate(self.stack.len() - 2);
-                    self.stack.push(Value::Instance(instance));
+                    self.stack.push(Value::Instance(instance))?;
                 }
             }
             non_function_value => {
@@ -379,26 +349,12 @@ impl VMState {
     }
 }
 
-impl Default for VMState {
-    fn default() -> Self {
-        Self {
-            stack: Vec::with_capacity(1000),
-            callframes: Default::default(),
-            open_upvalues:Default::default(),
-        }
-    }
-}
-
 impl Collectible for VMState {
     fn gc(&self) {
         self.callframes.gc();
 
         for upvalue in self.open_upvalues.iter() {
             upvalue.gc();
-        }
-
-        for value in self.stack.iter() {
-            value.gc();
         }
     }
 }
@@ -409,19 +365,13 @@ impl std::fmt::Debug for VMState {
 
         write!(f, "Chunk: {} {:?}", frame.name, frame)?;
 
-        write!(f, "Stack:")?;
-        for value in self.stack.iter() {
-            write!(f, "[{}] ", value)?;
-        }
-        writeln!(f)?;
+        writeln!(f, "Stack: {}", &self.stack)?;
 
         write!(f, "Locals:")?;
-        for value in self.stack.iter().skip(
-            self.callframes
-                .active()
-                .map(|f| f.stack_offset)
-                .unwrap_or_default(),
-        ) {
+        for value in self.stack.slice_from_top(self.callframes
+            .active()
+            .map(|f| f.stack_offset)
+            .unwrap_or_default()).unwrap_or_default() {
             write!(f, "[{}] ", value)?;
         }
         writeln!(f)?;
@@ -436,26 +386,26 @@ impl std::fmt::Debug for VMState {
     }
 }
 
-impl OpRunner<VMState> for VM {
-    fn visit_nil(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        state.stack.push(Value::Nil);
-        Ok(state)
+impl OpRunner<&mut VMState, ()> for VM {
+    fn visit_nil(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        state.stack.push(Value::Nil)?;
+        Ok(())
     }
 
     #[inline]
-    fn visit_true(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        state.stack.push(Value::Bool(true));
-        Ok(state)
+    fn visit_true(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        state.stack.push(Value::Bool(true))?;
+        Ok(())
     }
 
     #[inline]
-    fn visit_false(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        state.stack.push(Value::Bool(false));
-        Ok(state)
+    fn visit_false(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        state.stack.push(Value::Bool(false))?;
+        Ok(())
     }
 
     #[inline]
-    fn visit_constant(&mut self, mut state: VMState, idx: usize) -> Result<VMState, LoxError> {
+    fn visit_constant(&mut self, state: &mut VMState, idx: usize) -> Result<(), LoxError> {
         let constant = state.callframes.active()?.constant(idx)?;
 
         let value = match constant {
@@ -466,30 +416,30 @@ impl OpRunner<VMState> for VM {
             primitive => Value::Primitive(PrimitiveReference::new(primitive)),
         };
 
-        state.stack.push(value);
-        Ok(state)
+        state.stack.push(value)?;
+        Ok(())
     }
 
     #[inline]
     fn visit_define_global(
         &mut self,
-        mut state: VMState,
+        state: &mut VMState,
         name: usize,
-    ) -> Result<VMState, LoxError> {
+    ) -> Result<(), LoxError> {
         let key = state.callframes.active()?.constant(name)?.as_string()?.clone();
-        let value = state.stack_pop()?;
+        let value = state.stack.pop()?;
         let value = self.gc.alloc(value);
         self.globals.insert(key, value);
-        self.collect(&state);
-        Ok(state)
+        self.collect(state);
+        Ok(())
     }
 
     #[inline]
-    fn visit_get_global(&mut self, mut state: VMState, name: usize) -> Result<VMState, LoxError> {
+    fn visit_get_global(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
         let key = state.callframes.active()?.constant(name)?.as_string()?;
         if let Some(value) = self.globals.get(key) {
-            state.stack.push(value.cloned());
-            Ok(state)
+            state.stack.push(value.cloned())?;
+            Ok(())
         } else {
             Err(errors::runtime_stacktrace(
                 format!("Undefined variable '{}'.", key),
@@ -499,90 +449,75 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_set_global(&mut self, state: VMState, name: usize) -> Result<VMState, LoxError> {
-        let key = state.callframes.active()?.constant(name)?.as_string()?.clone();
-        let value = state.stack_peek()?;
-        let value = self.gc.alloc(*value);
-        self.globals.insert(key, value);
-        self.collect(&state);
-        Ok(state)
-    }
-
-    fn visit_get_local(&mut self, mut state: VMState, idx: usize) -> Result<VMState, LoxError> {
-        if let Some(value) = state.stack.get(state.callframes.active()?.stack_offset + idx) {
-            state.stack.push(*value);
-            Ok(state)
+    fn visit_set_global(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
+        let key = state.callframes.active()?.constant(name)?.as_string()?;
+        let value = state.stack.peek()?;
+        let value = self.gc.alloc(value);
+        if let Some(existing) = self.globals.get_mut(key) {
+            *existing = value;
         } else {
-            Err(errors::runtime_stacktrace(
-                "Invalid stack index in byte code for local assignment.",
-                "Make sure that you are passing valid stack indices to the virtual machine.",
-                state.callframes.stacktrace(),
-            ))
+            self.globals.insert(key.clone(), value);
         }
+        self.collect(state);
+        Ok(())
     }
 
-    fn visit_set_local(&mut self, mut state: VMState, idx: usize) -> Result<VMState, LoxError> {
-        let value = *state.stack_peek()?;
-        if let Some(slot) = state.stack.get_mut(state.callframes.active()?.stack_offset + idx) {
-            *slot = value;
-            Ok(state)
-        } else {
-            Err(errors::runtime_stacktrace(
-                "Invalid stack index in byte code for local assignment.",
-                "Make sure that you are passing valid stack indices to the virtual machine.",
-                state.callframes.stacktrace(),
-            ))
-        }
+    fn visit_get_local(&mut self, state: &mut VMState, idx: usize) -> Result<(), LoxError> {
+        let value = state.stack.get(state.callframes.active()?.stack_offset + idx)?;
+        state.stack.push(value)?;
+        Ok(())
     }
 
-    fn visit_get_upvalue(&mut self, mut state: VMState, idx: usize) -> Result<VMState, LoxError> {
+    fn visit_set_local(&mut self, state: &mut VMState, idx: usize) -> Result<(), LoxError> {
+        let value = state.stack.peek()?;
+        state.stack.replace(state.callframes.active()?.stack_offset + idx, value)?;
+        Ok(())
+    }
+
+    fn visit_get_upvalue(&mut self, state: &mut VMState, idx: usize) -> Result<(), LoxError> {
         match state.callframes.active()?.upvalue(idx)? {
-            Upvalue::Closed(value) => state.stack.push(value.cloned()),
+            Upvalue::Closed(value) => state.stack.push(value.cloned())?,
             Upvalue::Open(idx) => {
-                let value = state.stack.get(*idx).cloned().ok_or_else(|| errors::runtime_stacktrace(
-                    format!("Attempted to access local upvalue at a locals index {} which is invalid.", idx),
-                    "Please report this issue to us on GitHub with example code.",
-                    state.callframes.stacktrace(),
-                ))?;
-                state.stack.push(value);
+                let value = state.stack.get(*idx)?;
+                state.stack.push(value)?;
             }
         };
 
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_set_upvalue(&mut self, mut state: VMState, idx: usize) -> Result<VMState, LoxError> {
-        let value = state.stack_pop()?;
+    fn visit_set_upvalue(&mut self, state: &mut VMState, idx: usize) -> Result<(), LoxError> {
+        let value = state.stack.pop()?;
 
         match state.callframes.active()?.upvalue(idx)? {
             Upvalue::Closed(val) => val.replace_value(value),
             Upvalue::Open(idx) => {
-                state.stack[*idx] = value;
+                state.stack.replace(*idx, value)?;
             }
         };
 
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_get_property(&mut self, mut state: VMState, name: usize) -> Result<VMState, LoxError> {
-        let object = state.stack_pop()?;
+    fn visit_get_property(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
+        let object = state.stack.pop()?;
         let value = state.get_object_property(&mut self.gc, object, name)?;
-        state.stack.push(value);
-        Ok(state)
+        state.stack.push(value)?;
+        Ok(())
     }
 
-    fn visit_set_property(&mut self, mut state: VMState, name: usize) -> Result<VMState, LoxError> {
-        let value = state.stack_pop()?;
-        let object = state.stack_pop()?;
+    fn visit_set_property(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
+        let value = state.stack.pop()?;
+        let object = state.stack.pop()?;
         if let Value::Instance(mut instance) = object {
             let key = state.callframes.active()?.constant(name)?.as_string()?.clone();
             instance
                 .as_mut()
                 .fields
                 .insert(key.clone(), self.gc.alloc(value));
-            state.stack.push(value);
-            self.collect(&state);
-            Ok(state)
+            state.stack.push(value)?;
+            self.collect(state);
+            Ok(())
         } else {
             Err(errors::runtime_stacktrace(
                 format!(
@@ -595,31 +530,31 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_add(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        let right = state.stack_pop()?;
-        let left = state.stack_pop()?;
+    fn visit_add(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        let right = state.stack.pop()?;
+        let left = state.stack.pop()?;
 
         match (left, right) {
             (Value::Number(left), Value::Number(right)) => {
-                state.stack.push(Value::Number(left + right));
-                Ok(state)
+                state.stack.push(Value::Number(left + right))?;
+                Ok(())
             }
             (Value::String(left), Value::String(right)) => {
                 let value = self
                     .gc
                     .intern(&format!("{}{}", left.as_ref(), right.as_ref()));
-                state.stack.push(Value::String(value));
-                Ok(state)
+                state.stack.push(Value::String(value))?;
+                Ok(())
             }
             (Value::String(left), right) => {
                 let value = self.gc.intern(&format!("{}{}", left.as_ref(), right));
-                state.stack.push(Value::String(value));
-                Ok(state)
+                state.stack.push(Value::String(value))?;
+                Ok(())
             }
             (left, Value::String(right)) => {
                 let value = self.gc.intern(&format!("{}{}", left, right.as_ref()));
-                state.stack.push(Value::String(value));
-                Ok(state)
+                state.stack.push(Value::String(value))?;
+                Ok(())
             }
             (left, right) => Err(errors::runtime_stacktrace(
                 format!(
@@ -632,25 +567,25 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_subtract(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_subtract(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), Number: (left - right) => Number);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_multiply(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_multiply(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), Number: (left * right) => Number);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_divide(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_divide(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), Number: (left / right) => Number);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_negate(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        if let Value::Number(value) = state.stack_pop()? {
-            state.stack.push(Value::Number(-value));
-            Ok(state)
+    fn visit_negate(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        if let Value::Number(value) = state.stack.pop()? {
+            state.stack.push(Value::Number(-value))?;
+            Ok(())
         } else {
             Err(errors::runtime_stacktrace(
                 "Attempted to negate a non-numeric value.",
@@ -660,84 +595,67 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_not(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        let value = state.stack_pop()?;
-        state.stack.push(Value::Bool(!value.is_truthy()));
-        Ok(state)
+    fn visit_not(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        let value = state.stack.pop()?;
+        state.stack.push(Value::Bool(!value.is_truthy()))?;
+        Ok(())
     }
 
-    fn visit_equal(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_equal(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), *: (left == right) => Bool);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_greater(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_greater(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), *: (left > right) => Bool);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_greater_equal(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_greater_equal(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), *: (left >= right) => Bool);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_less(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_less(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), *: (left < right) => Bool);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_less_equal(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_less_equal(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         op_binary!(state(left, right), *: (left <= right) => Bool);
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_pop(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        state.stack_pop()?;
-        Ok(state)
+    fn visit_pop(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        state.stack.pop()?;
+        Ok(())
     }
 
-    fn visit_print(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        let value = state.stack_pop()?;
+    fn visit_print(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        let value = state.stack.pop()?;
         writeln!(self.output, "{}", value)?;
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_call(&mut self, mut state: VMState, arity: usize) -> Result<VMState, LoxError> {
-        if let Some(function) = state.stack.get(state.stack.len() - arity - 2).copied() {
-            state.call_function(&mut self.gc, &function, arity, false)?;
-            Ok(state)
-        } else {
-            Err(errors::runtime_stacktrace(
-                "Invalid stack index in byte code for function call.",
-                "Make sure that you are passing valid stack indices to the virtual machine.",
-                state.callframes.stacktrace(),
-            ))
-        }
+    fn visit_call(&mut self, state: &mut VMState, arity: usize) -> Result<(), LoxError> {
+        let function = state.stack.get_from_top(arity + 2)?;
+        state.call_function(&mut self.gc, &function, arity, false)?;
+        Ok(())
     }
 
     fn visit_invoke(
         &mut self,
-        mut state: VMState,
+        state: &mut VMState,
         name: usize,
         call_arity: usize,
-    ) -> Result<VMState, LoxError> {
-        let obj = state
-            .stack
-            .get(state.stack.len() - call_arity - 1)
-            .copied()
-            .ok_or_else(|| {
-                errors::runtime_stacktrace(
-                    "Invalid stack index in byte code for method invocation.",
-                    "Make sure that you are passing valid stack indices to the virtual machine.",
-                    state.callframes.stacktrace(),
-                )
-            })?;
+    ) -> Result<(), LoxError> {
+        let obj = state.stack.get_from_top(call_arity + 1)?;
 
         if let Value::Instance(instance) = obj {
             let key = state.callframes.active()?.constant(name)?.as_string()?;
             if let Some(method) = instance.as_ref().fields.get(key) {
                 state.call_function(&mut self.gc, method.as_ref(), call_arity, true)?;
-                Ok(state)
+                Ok(())
             } else if let Some(method) = instance.as_ref().class.as_ref().methods.get(key) {
                 if let Function::Closure { arity, .. } = method.as_ref() {
                     if call_arity != *arity {
@@ -748,12 +666,11 @@ impl OpRunner<VMState> for VM {
                         ));
                     }
 
-                    let self_idx = state.stack.len() - call_arity - 1;
-                    state.stack[self_idx] = Value::Instance(instance);
+                    state.stack.replace_from_top(call_arity + 1, Value::Instance(instance))?;
                     state
                         .callframes
                         .push(Frame::call(*method, state.stack.len(), true))?;
-                    Ok(state)
+                    Ok(())
                 } else {
                     Err(errors::runtime_stacktrace(
                         "Attempted to invoke a non-closure bound method.",
@@ -782,11 +699,11 @@ impl OpRunner<VMState> for VM {
 
     fn visit_invoke_super(
         &mut self,
-        mut state: VMState,
+        state: &mut VMState,
         name: usize,
         arity: usize,
-    ) -> Result<VMState, LoxError> {
-        if let Value::Class(superclass) = state.stack_pop()? {
+    ) -> Result<(), LoxError> {
+        if let Value::Class(superclass) = state.stack.pop()? {
             let method = state.callframes.active()?.constant(name)?.as_string()?;
 
             let function = superclass.as_ref().methods.get(method).copied()
@@ -797,7 +714,7 @@ impl OpRunner<VMState> for VM {
                 ))?;
 
             state.call_function(&mut self.gc, &Value::Function(function), arity, true)?;
-            Ok(state)
+            Ok(())
         } else {
             Err(errors::runtime_stacktrace(
                 "Attempted to invoke a super method on a non-class value.",
@@ -807,7 +724,7 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_closure(&mut self, mut state: VMState, function: usize) -> Result<VMState, LoxError> {
+    fn visit_closure(&mut self, state: &mut VMState, function: usize) -> Result<(), LoxError> {
         let function = state.callframes.active()?.constant(function)?.as_function()?;
         let closure = Function::capture(function, |varrefs| {
             let mut upvalues = Vec::with_capacity(varrefs.len());
@@ -848,21 +765,21 @@ impl OpRunner<VMState> for VM {
         })?;
 
         let closure = self.gc.alloc(closure);
-        state.stack.push(Value::Function(closure));
-        self.collect(&state);
+        state.stack.push(Value::Function(closure))?;
+        self.collect(state);
 
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_close_upvalue(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
+    fn visit_close_upvalue(&mut self, state: &mut VMState) -> Result<(), LoxError> {
         state.close_upvalues(&mut self.gc, state.stack.len() - 1)?;
-        state.stack_pop()?;
-        self.collect(&state);
-        Ok(state)
+        state.stack.pop()?;
+        self.collect(state);
+        Ok(())
     }
 
-    fn visit_return(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        let value = state.stack_pop()?;
+    fn visit_return(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        let value = state.stack.pop()?;
         let call_frame = state.callframes.pop().ok_or_else(|| {
             errors::runtime_stacktrace(
                 "Attempted to return from a function with no call frames.",
@@ -874,30 +791,30 @@ impl OpRunner<VMState> for VM {
         state.close_upvalues(&mut self.gc, call_frame.stack_offset)?;
         state.stack.truncate(call_frame.stack_offset);
         if !call_frame.fast_call {
-            state.stack_pop()?;
+            state.stack.pop()?;
         }
 
-        state.stack.push(value);
+        state.stack.push(value)?;
 
-        self.collect(&state);
-        Ok(state)
+        self.collect(state);
+        Ok(())
     }
 
-    fn visit_class(&mut self, mut state: VMState, name: usize) -> Result<VMState, LoxError> {
+    fn visit_class(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
         let name = state.callframes.active()?.constant(name)?.as_string()?.clone();
         let class = self.gc.alloc(Class::new(name));
-        state.stack.push(Value::Class(class));
-        self.collect(&state);
-        Ok(state)
+        state.stack.push(Value::Class(class))?;
+        self.collect(state);
+        Ok(())
     }
 
-    fn visit_inherit(&mut self, mut state: VMState) -> Result<VMState, LoxError> {
-        let subclass = state.stack_pop()?;
-        let superclass = state.stack_peek()?;
+    fn visit_inherit(&mut self, state: &mut VMState) -> Result<(), LoxError> {
+        let subclass = state.stack.pop()?;
+        let superclass = state.stack.peek()?;
 
         if let (Value::Class(mut subclass), Value::Class(superclass)) = (subclass, superclass) {
             subclass.as_mut().inherit(superclass.as_ref());
-            Ok(state)
+            Ok(())
         } else {
             Err(errors::runtime_stacktrace(
                 format!(
@@ -909,15 +826,15 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_method(&mut self, mut state: VMState, name: usize) -> Result<VMState, LoxError> {
+    fn visit_method(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
         let name = state.callframes.active()?.constant(name)?.as_string()?.clone();
-        let method = state.stack_pop()?;
-        let class = state.stack_peek()?;
+        let method = state.stack.pop()?;
+        let class = state.stack.peek()?;
 
         match (class, method) {
             (Value::Class(mut class), Value::Function(method)) => {
                 class.as_mut().methods.insert(name, method);
-                Ok(state)
+                Ok(())
             }
             (class, _) => Err(errors::runtime_stacktrace(
                 format!(
@@ -930,18 +847,18 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_get_super(&mut self, mut state: VMState, name: usize) -> Result<VMState, LoxError> {
-        let superclass = state.stack_pop()?;
-        let instance = state.stack_peek()?;
+    fn visit_get_super(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
+        let superclass = state.stack.pop()?;
+        let instance = state.stack.peek()?;
 
         match (instance, superclass) {
             (Value::Instance(instance), Value::Class(superclass)) => {
                 let method = state.callframes.active()?.constant(name)?.as_string()?;
                 if let Some(method) = superclass.as_ref().methods.get(&method.to_string()) {
-                    let bound_method = self.gc.alloc(BoundMethod(*instance, *method));
-                    state.stack.push(Value::BoundMethod(bound_method));
-                    self.collect(&state);
-                    Ok(state)
+                    let bound_method = self.gc.alloc(BoundMethod(instance, *method));
+                    state.stack.push(Value::BoundMethod(bound_method))?;
+                    self.collect(state);
+                    Ok(())
                 } else {
                     Err(errors::runtime_stacktrace(
                         format!("Method '{}' not found in superclass '{}'.", method, superclass),
@@ -963,38 +880,307 @@ impl OpRunner<VMState> for VM {
         }
     }
 
-    fn visit_jump(&mut self, mut state: VMState, offset: usize) -> Result<VMState, LoxError> {
+    fn visit_jump(&mut self, state: &mut VMState, offset: usize) -> Result<(), LoxError> {
         state.callframes.active_mut()?.ip = offset;
-        Ok(state)
+        Ok(())
     }
 
-    fn visit_jump_if(&mut self, mut state: VMState, offset: usize) -> Result<VMState, LoxError> {
-        let value = state.stack_peek()?;
+    fn visit_jump_if(&mut self, state: &mut VMState, offset: usize) -> Result<(), LoxError> {
+        let value = state.stack.peek()?;
         if value.is_truthy() {
             state.callframes.active_mut()?.ip = offset;
         }
-        Ok(state)
+        Ok(())
     }
 
     fn visit_jump_if_false(
         &mut self,
-        mut state: VMState,
+        state: &mut VMState,
         offset: usize,
-    ) -> Result<VMState, LoxError> {
-        let value = state.stack_peek()?;
+    ) -> Result<(), LoxError> {
+        let value = state.stack.peek()?;
         if !value.is_truthy() {
             state.callframes.active_mut()?.ip = offset;
         }
-        Ok(state)
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::ast::Stmt;
     use crate::CaptureOutput;
     use crate::compiler::OpCode;
+    use crate::{ast::Parser, compiler::compile, lexer::Scanner};
 
     use super::*;
+
+    fn parse(source: &str) -> Vec<Stmt> {
+        let lexer = Scanner::new(source);
+        let (stmts, errs) = Parser::parse(
+            &mut lexer
+                .inspect(|t| {
+                    if let Err(e) = t {
+                        panic!("{}", e);
+                    }
+                })
+                .filter_map(|t| t.ok()),
+        );
+
+        if errs.is_empty() {
+            stmts
+        } else {
+            panic!("{:?}", errs);
+        }
+    }
+
+    macro_rules! run {
+        (err: $src:expr => $val:expr) => {{
+            let stmts = parse($src);
+
+            let chunk = compile(&stmts).expect("no errors");
+
+            println!("{:?}", chunk);
+
+            let _output = Box::new(CaptureOutput::default());
+            let err = VM::default()
+                .with_output(_output.clone())
+                .with_debug()
+                .run_function(chunk)
+                .expect_err("expected error");
+            assert_eq!(format!("{}", err), format!("{}", $val).trim());
+        }};
+
+        ($src:expr => $val:expr) => {{
+            let stmts = parse($src);
+
+            let chunk = compile(&stmts).expect("no errors");
+
+            println!("{:?}", chunk);
+
+            let output = Box::new(CaptureOutput::default());
+            VM::default()
+                .with_output(output.clone())
+                .with_debug()
+                .run_function(chunk)
+                .expect("no errors");
+            assert_eq!(output.to_string().trim(), format!("{}", $val).trim());
+        }};
+    }
+
+    #[test]
+    fn unary_and_binary() {
+        run!("print -5 + 10;" => 5);
+    }
+
+    #[test]
+    fn examples() {
+        run!("print (-1 + 2) * 3 - -4;" => 7);
+        run!("print !(5 - 4 > 3 * 2 == !nil);" => true);
+    }
+
+    #[test]
+    fn booleans() {
+        run!("print true;" => true);
+        run!("print !false;" => true);
+        run!("print !nil;" => true);
+    }
+
+    #[test]
+    fn comparisons() {
+        run!("print 10 == 10;" => true);
+        run!("print 10 != 10;" => false);
+        run!("print 10 < 10;" => false);
+        run!("print 10 <= 10;" => true);
+        run!("print 10 > 10;" => false);
+        run!("print 10 >= 10;" => true);
+    }
+
+    #[test]
+    fn global_variables() {
+        run!("var a = 10; print a;" => 10);
+        run!(r#"var beverage = "cafe au lait";
+        var breakfast = "beignets with " + beverage;
+        print breakfast;"# => "beignets with cafe au lait");
+
+        run!("var a = 10; a = 12; print a;" => 12);
+    }
+
+    #[test]
+    fn local_variables() {
+        run!("var a = 10; { var a = 20; print a; } print a;" => "20\n10");
+        run!("var a = 10; { var a = 20; { var a = 30; print a; } print a; } print a;" => "30\n20\n10");
+    }
+
+    #[test]
+    fn test_if() {
+        run!("if (true) { print true; }" => true);
+        run!("if (false) { print true; }" => "");
+        run!("if (true) { print true; } else { print false; }" => true);
+        run!("if (false) { print true; } else { print false; }" => false);
+    }
+
+    #[test]
+    fn logical() {
+        run!("print 1 and 2;" => 2);
+        run!("print 1 and false;" => false);
+        run!("print false and 1;" => false);
+        run!("print nil and false;" => "nil");
+        run!("print 1 or 2;" => 1);
+        run!("print true or false;" => true);
+        run!("print false or true;" => true);
+        run!("print false or false;" => false);
+    }
+
+    #[test]
+    fn loops() {
+        run!("var i = 0; while (i < 10) { print i; i = i + 1; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
+        run!("for (var i = 0; i < 10; i = i + 1) { print i; }" => "0\n1\n2\n3\n4\n5\n6\n7\n8\n9");
+        run!("while (true) { print 1; break; print 2; }" => 1);
+    }
+
+    #[test]
+    fn functions() {
+        run!("fun foo() { print 1; } print foo;" => "fun foo (0 args)");
+        run!("var foo = fun () { print 1; }; print foo;" => "fun anonymous@'fun' at line 1 (0 args)");
+        run!("fun foo() { print 1; } foo();" => 1);
+        run!("fun foo() { print 1; } foo(); foo();" => "1\n1");
+        run!("fun foo() { return 1; } print foo();" => 1);
+        run!("print clock() > 0;" => true);
+        run!(err: "assert(false, \"should fail\");" => "Assertion failed: should fail\n\n  [line 0] in assert()\n  [line 1] in script");
+    }
+
+    #[test]
+    fn returns() {
+        run!("fun foo() { return 1; } print foo();" => 1);
+        run!("fun foo() { return; } print foo();" => "nil");
+    }
+
+    #[test]
+    fn stacktraces() {
+        run!(err: r#"
+fun a() { b(); }
+fun b() { c(); }
+fun c() {
+    c("too", "many");
+}
+
+a();
+        "# => ("Invalid number of arguments, got 2 but expected 0.
+Make sure that you are passing the correct number of arguments to the function.
+
+  [line 5] in c()
+  [line 3] in b()
+  [line 2] in a()
+  [line 8] in script"))
+    }
+
+    #[test]
+    fn closures() {
+        run!(r#"var x = "global";
+        fun outer() {
+          var x = "outer";
+          fun inner() {
+            print x;
+          }
+          inner();
+        }
+        outer();"# => "outer");
+
+        run!(r#"
+        fun outer() {
+            var x = "value";
+            fun middle() {
+              fun inner() {
+                print x;
+              }
+          
+              print "create inner closure";
+              return inner;
+            }
+          
+            print "return from outer";
+            return middle;
+          }
+          
+          var mid = outer();
+          var in = mid();
+          in();
+        "# => "return from outer\n\
+        create inner closure\n\
+        value");
+
+        run!(r#"
+        fun outer() {
+            var x = "outside";
+            fun inner() {
+              print x;
+            }
+          
+            return inner;
+          }
+          
+          var closure = outer();
+          closure();
+        "# => "outside");
+
+        run!(r#"
+        var globalSet;
+        var globalGet;
+        
+        fun main() {
+          var a = "initial";
+        
+          fun set() { a = "updated"; }
+          fun get() { print a; }
+        
+          globalSet = set;
+          globalGet = get;
+        }
+        
+        main();
+        globalSet();
+        globalGet();
+        "# => "updated");
+
+        run!(r#"
+        fun makeCounter() {
+            var count = 0;
+
+            return fun () {
+                count = count + 1;
+                return count;
+            };
+        }
+
+        var c1 = makeCounter();
+        var c2 = makeCounter();
+
+        print c1();
+        print c1();
+        print c1();
+        print c2();
+        print c1();
+        print c2();
+        "# => "1\n2\n3\n1\n4\n2")
+    }
+
+    #[test]
+    fn classes() {
+        run!(r#"
+        class Brioche {}
+        print Brioche;
+        "# => "Brioche");
+    }
+
+    #[test]
+    fn test_native_stack_leak() {
+        run!(r#"
+        clock();
+        clock();
+        print 6;
+        "# => 6)
+    }
 
     macro_rules! chunk {
         ($(
@@ -1020,7 +1206,7 @@ mod tests {
         };
     }
 
-    macro_rules! run {
+    macro_rules! run_chunk {
         ($chunk:expr => $val:expr) => {{
             let output = Box::new(CaptureOutput::default());
             VM::default()
@@ -1035,7 +1221,7 @@ mod tests {
     fn test_negate() {
         let chunk = chunk!(Constant [const Number = 123], Negate, Print);
 
-        run!(chunk => "-123");
+        run_chunk!(chunk => "-123");
     }
 
     #[test]
@@ -1050,7 +1236,7 @@ mod tests {
             Print
         );
 
-        run!(chunk => -((3.4 + 1.2)/5.6));
+        run_chunk!(chunk => -((3.4 + 1.2)/5.6));
 
         let chunk = chunk!(
             Constant [const Number = 5],
@@ -1065,14 +1251,14 @@ mod tests {
             Print
         );
 
-        run!(chunk => 15);
+        run_chunk!(chunk => 15);
     }
 
     #[test]
     fn test_boolean() {
         let chunk = chunk!(True, Not, Print);
 
-        run!(chunk => false);
+        run_chunk!(chunk => false);
     }
 
     #[test]
@@ -1086,6 +1272,6 @@ mod tests {
             Print
         );
 
-        run!(chunk => "string");
+        run_chunk!(chunk => "string");
     }
 }

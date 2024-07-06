@@ -4,6 +4,8 @@ use crate::{errors, LoxError};
 
 use super::{frame::Frame, gc::Collectible};
 
+const MAX_CALLSTACK_DEPTH: usize = 1000;
+
 pub struct CallStack(Vec<Frame>);
 
 impl CallStack {
@@ -24,7 +26,7 @@ impl CallStack {
     }
 
     pub fn push(&mut self, frame: Frame) -> Result<(), LoxError> {
-        if self.0.len() >= 1000 {
+        if self.0.len() >= MAX_CALLSTACK_DEPTH {
             Err(errors::runtime_stacktrace(
                 "The maximum call stack size has been exceeded.",
                 "Make sure that you are not calling functions with unbounded recursion.",
@@ -55,7 +57,7 @@ impl CallStack {
 
 impl Default for CallStack {
     fn default() -> Self {
-        CallStack(Vec::with_capacity(1000))
+        CallStack(Vec::with_capacity(MAX_CALLSTACK_DEPTH))
     }
 }
 

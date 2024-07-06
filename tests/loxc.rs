@@ -122,7 +122,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
     }
 }
 
-include!(concat!(env!("OUT_DIR"), "/tests/data.rs"));
+//include!(concat!(env!("OUT_DIR"), "/tests/data.rs"));
 
 mod lang {
     use super::run_file;

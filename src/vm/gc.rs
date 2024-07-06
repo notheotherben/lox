@@ -37,6 +37,7 @@ pub struct GC {
 
     min_checkpoint: usize,
     growth_factor: usize,
+    shrink_factor: usize,
     checkpoint: usize,
 }
 
@@ -68,7 +69,11 @@ impl GC {
 
         self.sweep();
 
-        self.checkpoint = self.allocated_bytes() * self.growth_factor;
+        let allocated = self.allocated_bytes();
+        if allocated > self.checkpoint || allocated < self.checkpoint / self.shrink_factor {
+            self.checkpoint = allocated * self.growth_factor;
+        }
+
         if self.checkpoint < self.min_checkpoint {
             self.checkpoint = self.min_checkpoint;
         }
@@ -126,6 +131,7 @@ impl Default for GC {
             upvalues: Default::default(),
             strings: Default::default(),
             growth_factor: 2,
+            shrink_factor: 4,
             min_checkpoint: gc_min_checkpoint,
             checkpoint: gc_min_checkpoint,
         }

@@ -2,8 +2,8 @@ use crate::LoxError;
 
 use super::OpCode;
 
-pub trait OpRunner<S> {
-    fn visit_op(&mut self, state: S, op: OpCode) -> Result<S, LoxError> {
+pub trait OpRunner<S, R> {
+    fn visit_op(&mut self, state: S, op: OpCode) -> Result<R, LoxError> {
         match op {
             OpCode::Nil => self.visit_nil(state),
             OpCode::True => self.visit_true(state),
@@ -58,54 +58,54 @@ pub trait OpRunner<S> {
         }
     }
 
-    fn visit_nil(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_true(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_false(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_constant(&mut self, state: S, idx: usize) -> Result<S, LoxError>;
+    fn visit_nil(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_true(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_false(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_constant(&mut self, state: S, idx: usize) -> Result<R, LoxError>;
 
-    fn visit_define_global(&mut self, state: S, name: usize) -> Result<S, LoxError>;
-    fn visit_get_global(&mut self, state: S, name: usize) -> Result<S, LoxError>;
-    fn visit_set_global(&mut self, state: S, name: usize) -> Result<S, LoxError>;
+    fn visit_define_global(&mut self, state: S, name: usize) -> Result<R, LoxError>;
+    fn visit_get_global(&mut self, state: S, name: usize) -> Result<R, LoxError>;
+    fn visit_set_global(&mut self, state: S, name: usize) -> Result<R, LoxError>;
 
-    fn visit_get_local(&mut self, state: S, idx: usize) -> Result<S, LoxError>;
-    fn visit_set_local(&mut self, state: S, idx: usize) -> Result<S, LoxError>;
+    fn visit_get_local(&mut self, state: S, idx: usize) -> Result<R, LoxError>;
+    fn visit_set_local(&mut self, state: S, idx: usize) -> Result<R, LoxError>;
 
-    fn visit_get_upvalue(&mut self, state: S, idx: usize) -> Result<S, LoxError>;
-    fn visit_set_upvalue(&mut self, state: S, idx: usize) -> Result<S, LoxError>;
+    fn visit_get_upvalue(&mut self, state: S, idx: usize) -> Result<R, LoxError>;
+    fn visit_set_upvalue(&mut self, state: S, idx: usize) -> Result<R, LoxError>;
 
-    fn visit_get_property(&mut self, state: S, name: usize) -> Result<S, LoxError>;
-    fn visit_set_property(&mut self, state: S, name: usize) -> Result<S, LoxError>;
+    fn visit_get_property(&mut self, state: S, name: usize) -> Result<R, LoxError>;
+    fn visit_set_property(&mut self, state: S, name: usize) -> Result<R, LoxError>;
 
-    fn visit_add(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_subtract(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_multiply(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_divide(&mut self, state: S) -> Result<S, LoxError>;
+    fn visit_add(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_subtract(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_multiply(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_divide(&mut self, state: S) -> Result<R, LoxError>;
     
-    fn visit_negate(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_not(&mut self, state: S) -> Result<S, LoxError>;
+    fn visit_negate(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_not(&mut self, state: S) -> Result<R, LoxError>;
 
-    fn visit_equal(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_greater(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_greater_equal(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_less(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_less_equal(&mut self, state: S) -> Result<S, LoxError>;
+    fn visit_equal(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_greater(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_greater_equal(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_less(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_less_equal(&mut self, state: S) -> Result<R, LoxError>;
 
-    fn visit_pop(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_print(&mut self, state: S) -> Result<S, LoxError>;
+    fn visit_pop(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_print(&mut self, state: S) -> Result<R, LoxError>;
 
-    fn visit_call(&mut self, state: S, arity: usize) -> Result<S, LoxError>;
-    fn visit_invoke(&mut self, state: S, name: usize, arity: usize) -> Result<S, LoxError>;
-    fn visit_invoke_super(&mut self, state: S, name: usize, arity: usize) -> Result<S, LoxError>;
-    fn visit_closure(&mut self, state: S, function: usize) -> Result<S, LoxError>;
-    fn visit_close_upvalue(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_return(&mut self, state: S) -> Result<S, LoxError>;
+    fn visit_call(&mut self, state: S, arity: usize) -> Result<R, LoxError>;
+    fn visit_invoke(&mut self, state: S, name: usize, arity: usize) -> Result<R, LoxError>;
+    fn visit_invoke_super(&mut self, state: S, name: usize, arity: usize) -> Result<R, LoxError>;
+    fn visit_closure(&mut self, state: S, function: usize) -> Result<R, LoxError>;
+    fn visit_close_upvalue(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_return(&mut self, state: S) -> Result<R, LoxError>;
     
-    fn visit_class(&mut self, state: S, name: usize) -> Result<S, LoxError>;
-    fn visit_inherit(&mut self, state: S) -> Result<S, LoxError>;
-    fn visit_method(&mut self, state: S, name: usize) -> Result<S, LoxError>;
-    fn visit_get_super(&mut self, state: S, name: usize) -> Result<S, LoxError>;
+    fn visit_class(&mut self, state: S, name: usize) -> Result<R, LoxError>;
+    fn visit_inherit(&mut self, state: S) -> Result<R, LoxError>;
+    fn visit_method(&mut self, state: S, name: usize) -> Result<R, LoxError>;
+    fn visit_get_super(&mut self, state: S, name: usize) -> Result<R, LoxError>;
 
-    fn visit_jump(&mut self, state: S, offset: usize) -> Result<S, LoxError>;
-    fn visit_jump_if(&mut self, state: S, offset: usize) -> Result<S, LoxError>;
-    fn visit_jump_if_false(&mut self, state: S, offset: usize) -> Result<S, LoxError>;
+    fn visit_jump(&mut self, state: S, offset: usize) -> Result<R, LoxError>;
+    fn visit_jump_if(&mut self, state: S, offset: usize) -> Result<R, LoxError>;
+    fn visit_jump_if_false(&mut self, state: S, offset: usize) -> Result<R, LoxError>;
 }
