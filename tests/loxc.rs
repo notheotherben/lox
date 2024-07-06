@@ -90,6 +90,7 @@ fn run_file(path: &str) -> Result<(), LoxError> {
     if let Err(err) = lox::vm::VM::default()
         .with_output(Box::new(out.clone()))
         .with_debug()
+        .with_gc_stress()
         .run_function(chunk)
     {
         eprintln!("{}", err);

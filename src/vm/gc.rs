@@ -26,6 +26,8 @@ pub trait Collectible {
 /// The `GC` struct is responsible for holding and maintaining the various GC pools containing
 /// allocated objects, as well as coordinating mark-and-sweep semantics during a GC cycle.
 pub struct GC {
+    stress: bool,
+
     values: GCPool<Value>,
     functions: GCPool<Function>,
     bound_methods: GCPool<BoundMethod>,
@@ -42,11 +44,18 @@ pub struct GC {
 }
 
 impl GC {
+    pub fn with_stress(self) -> Self {
+        Self {
+            stress: true,
+            ..self
+        }
+    }
+
     pub fn collect<M>(&mut self, marker: M) -> Option<GCStats>
     where
         M: FnOnce(),
     {
-        if self.allocated_bytes() >= self.checkpoint {
+        if self.stress || self.allocated_bytes() >= self.checkpoint {
             let stats = self.force_collect(marker);
             Some(stats)
         } else {
@@ -123,6 +132,7 @@ impl Default for GC {
         let gc_min_checkpoint = 1024 * 1024;
 
         Self {
+            stress: false,
             values: Default::default(),
             functions: Default::default(),
             bound_methods: Default::default(),

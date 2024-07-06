@@ -70,6 +70,12 @@ impl VM {
     pub fn with_output(self, output: Box<dyn std::io::Write>) -> Self {
         Self { output, ..self }
     }
+    pub fn with_gc_stress(self) -> Self {
+        Self {
+            gc: self.gc.with_stress(),
+            ..self
+        }
+    }
 
     pub fn with_debug(self) -> Self {
         Self {
