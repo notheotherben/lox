@@ -4,7 +4,7 @@ use std::{
 
 use crate::{LoxError, compiler::{Function as CFunction, VarRef, Chunk}};
 
-use super::{alloc::Alloc, class::Instance, frame::Frame, upvalue::Upvalue, Collectible, Value, VM};
+use super::{alloc::Alloc, class::Instance, upvalue::Upvalue, Collectible, Value};
 
 #[derive(Clone)]
 pub enum Function {
@@ -12,7 +12,7 @@ pub enum Function {
         name: Rc<String>,
         arity: usize,
         #[allow(clippy::type_complexity)]
-        fun: Rc<Box<dyn Fn(&mut VM, &Frame) -> Result<Value, LoxError> + 'static>>,
+        fun: Rc<Box<dyn Fn(&[Value]) -> Result<Value, LoxError> + 'static>>,
     },
     Closure {
         name: Rc<String>,
@@ -32,7 +32,7 @@ impl Function {
         })
     }
     
-    pub fn native<N: Into<String>, F: Fn(&mut VM, &Frame) -> Result<Value, LoxError> + 'static>(
+    pub fn native<N: Into<String>, F: Fn(&[Value]) -> Result<Value, LoxError> + 'static>(
         name: N,
         arity: usize,
         fun: F,

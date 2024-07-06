@@ -1,0 +1,168 @@
+---- debug_test stdout ----
+class Base {
+  foo() {
+    print "Base.foo()";
+  }
+}
+
+class Derived < Base {
+  foo() {
+    print "Derived.foo()";
+    super.foo();
+  }
+}
+
+Derived().foo();
+// expect: Derived.foo()
+// expect: Base.foo()
+
+Chunk:  0000    1 OP_CLASS Base at line 1
+Stack:
+Locals:
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] clock=[fun native@clock (0 args)] 
+GC: Allocated 128B, Collected 0B
+
+Chunk:  0001    | OP_DEFINE_GLOBAL Base at line 1
+Stack:[Base] 
+Locals:[Base] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] clock=[fun native@clock (0 args)] 
+GC: Allocated 400B, Collected 0B
+
+Chunk:  0002    | OP_GET_GLOBAL Base at line 1
+Stack:
+Locals:
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 416B, Collected 0B
+
+Chunk:  0003    | OP_CLOSURE <fn foo> at line 1
+Stack:[Base] 
+Locals:[Base] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 416B, Collected 0B
+
+Chunk:  0004    2 OP_METHOD foo at line 2
+Stack:[Base] [fun foo (0 args)] 
+Locals:[Base] [fun foo (0 args)] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 496B, Collected 0B
+
+Chunk:  0005    | OP_POP at line 2
+Stack:[Base] 
+Locals:[Base] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 496B, Collected 0B
+
+Chunk:  0006    | OP_CLOSURE <fn class@Derived> at line 2
+Stack:
+Locals:
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 496B, Collected 0B
+
+Chunk:  0007    | OP_NIL at line 2
+Stack:[fun class@Derived (0 args)] 
+Locals:[fun class@Derived (0 args)] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 576B, Collected 0B
+
+Chunk:  0008    | OP_CALL 0 at line 2
+Stack:[fun class@Derived (0 args)] [nil] 
+Locals:[fun class@Derived (0 args)] [nil] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 576B, Collected 0B
+
+Chunk: class@Derived 0000    7 OP_CLASS Derived at line 7
+Stack:[fun class@Derived (0 args)] [nil] 
+Locals:[nil] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 576B, Collected 0B
+
+Chunk: class@Derived 0001    | OP_DEFINE_GLOBAL Derived at line 7
+Stack:[fun class@Derived (0 args)] [nil] [Derived] 
+Locals:[nil] [Derived] 
+Upvalues:
+
+Globals:assert=[fun native@assert (2 args)] Base=[Base] clock=[fun native@clock (0 args)] 
+GC: Allocated 848B, Collected 0B
+
+Chunk: class@Derived 0002    | OP_GET_GLOBAL Base at line 7
+Stack:[fun class@Derived (0 args)] [nil] 
+Locals:[nil] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 864B, Collected 0B
+
+Chunk: class@Derived 0003    | OP_GET_GLOBAL Derived at line 7
+Stack:[fun class@Derived (0 args)] [nil] [Base] 
+Locals:[nil] [Base] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 864B, Collected 0B
+
+Chunk: class@Derived 0004    | OP_INHERIT at line 7
+Stack:[fun class@Derived (0 args)] [nil] [Base] [Derived] 
+Locals:[nil] [Base] [Derived] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 864B, Collected 0B
+
+Chunk: class@Derived 0005    | OP_GET_GLOBAL Derived at line 7
+Stack:[fun class@Derived (0 args)] [nil] 
+Locals:[nil] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 864B, Collected 0B
+
+Chunk: class@Derived 0006    | OP_CLOSURE <fn foo> at line 7
+          |            local 1
+Stack:[fun class@Derived (0 args)] [nil] [Derived] 
+Locals:[nil] [Derived] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 864B, Collected 0B
+
+Chunk: class@Derived 0007    8 OP_METHOD foo at line 8
+Stack:[fun class@Derived (0 args)] [nil] [Derived] [fun foo (0 args)] 
+Locals:[nil] [Derived] [fun foo (0 args)] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 960B, Collected 0B
+
+Chunk: class@Derived 0008    | OP_POP at line 8
+Stack:[fun class@Derived (0 args)] [nil] [Derived] 
+Locals:[nil] [Derived] 
+Upvalues:
+
+Globals:clock=[fun native@clock (0 args)] Derived=[Derived] assert=[fun native@assert (2 args)] Base=[Base] 
+GC: Allocated 960B, Collected 0B
+
+Attempted to access local upvalue at a locals index 2 which is invalid.
+Please report this issue to us on GitHub with example code.
+
+  [line 2] in script
+Failed with output:

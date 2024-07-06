@@ -169,6 +169,15 @@ impl Allocator<Upvalue> for GC {
     }
 }
 
+impl Display for GC {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", GCStats {
+            allocated: self.allocated_bytes(),
+            collected: 0,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GCStats {
     pub allocated: usize,
@@ -192,7 +201,7 @@ impl Display for GCStats {
             collected_prefix += 1;
         }
 
-        write!(f, "GC collected {}{}B ({}{}B remaining)", collected, prefixes[collected_prefix], allocated, prefixes[allocated_prefix])
+        write!(f, "Allocated {}{}B, Collected {}{}B", allocated, prefixes[allocated_prefix], collected, prefixes[collected_prefix])
     }
 }
 

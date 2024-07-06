@@ -4,7 +4,7 @@ use crate::compiler::Primitive;
 
 use super::{fun::BoundMethod, Alloc, Class, Collectible, Function, Instance};
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Value {
     Nil,
     Bool(bool),

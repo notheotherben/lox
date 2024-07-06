@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::{errors, Loc};
+
 use super::Function;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -9,6 +11,30 @@ pub enum Primitive {
     Number(f64),
     String(String),
     Function(Function),
+}
+
+impl Primitive {
+    pub fn as_string(&self) -> Result<&String, errors::LoxError> {
+        match self {
+            Primitive::String(s) => Ok(s),
+            other => Err(errors::runtime(
+                Loc::Unknown,
+                format!("Expected constant reference to be a string, but got {other} instead."),
+                "Make sure that your bytecode is using the correct indexes to access constants within each chunk.",
+            )),
+        }
+    }
+
+    pub fn as_function(&self) -> Result<&Function, errors::LoxError> {
+        match self {
+            Primitive::Function(f) => Ok(f),
+            other => Err(errors::runtime(
+                Loc::Unknown,
+                format!("Expected constant reference to be a function, but got {other} instead."),
+                "Make sure that your bytecode is using the correct indexes to access constants within each chunk.",
+            )),
+        }
+    }
 }
 
 impl Display for Primitive {

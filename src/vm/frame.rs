@@ -1,6 +1,6 @@
 use std::{rc::Rc, fmt::{Debug, Display}};
 
-use crate::{Loc, compiler::{Chunk, VarRef, Primitive, OpCode}};
+use crate::{compiler::{Chunk, OpCode, Primitive, VarRef}, errors, Loc, LoxError};
 
 use super::{gc::Collectible, upvalue::Upvalue, Alloc, Allocator, Function, GC};
 use crate::compiler::Function as CFunction;
@@ -77,12 +77,28 @@ impl Frame {
         }
     }
 
-    pub fn chunk(&self) -> &Chunk {
-        &self.chunk
+    pub fn constant(&self, idx: usize) -> Result<&Primitive, LoxError> {
+        self.chunk.constants.get(idx).ok_or_else(|| errors::runtime(
+            self.last_location(),
+            "Attempted to retrieve a constant using an invalid index.",
+            "Make sure that your bytecode is using the correct indexes to access constants within each chunk."
+        ))
     }
 
-    pub fn constant(&self, idx: usize) -> Option<&Primitive> {
-        self.chunk.constants.get(idx)
+    pub fn upvalue_alloc(&self, idx: usize) -> Result<Alloc<Upvalue>, LoxError> {
+        self.upvalues.get(idx).copied().ok_or_else(|| errors::runtime(
+            self.last_location(),
+            "Attempted to retrieve an upvalue using an invalid index.",
+            "Make sure that your bytecode is using the correct indexes to access upvalues within each frame."
+        ))
+    }
+
+    pub fn upvalue(&self, idx: usize) -> Result<&Upvalue, LoxError> {
+        self.upvalues.get(idx).map(|u| u.as_ref()).ok_or_else(|| errors::runtime(
+            self.last_location(),
+            "Attempted to retrieve an upvalue using an invalid index.",
+            "Make sure that your bytecode is using the correct indexes to access upvalues within each frame."
+        ))
     }
 
     pub fn opcode(&self) -> Option<&OpCode> {
