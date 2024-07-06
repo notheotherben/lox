@@ -1,12 +1,12 @@
 use std::ptr::NonNull;
 
-use ahash::AHashMap;
+use fnv::FnvHashMap;
 
 use super::alloc::Allocation;
 
 #[derive(Default)]
 pub struct StringPool {
-    strings: AHashMap<String, NonNull<Allocation<String>>>,
+    strings: FnvHashMap<String, NonNull<Allocation<String>>>,
     pub(crate) allocated_bytes: usize,
 }
 

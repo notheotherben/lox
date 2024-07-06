@@ -4,6 +4,8 @@ use std::{
     time::SystemTime,
 };
 
+use fnv::FnvHashMap;
+
 use crate::{
     compiler::{self, Chunk, OpRunner, Primitive, VarRef},
     errors, Loc, LoxError,
@@ -16,52 +18,43 @@ use super::{
 pub struct VM {
     debug: bool,
     output: Box<dyn std::io::Write>,
-    globals: ahash::AHashMap<String, Alloc<Value>>,
+    globals: FnvHashMap<String, Alloc<Value>>,
     gc: GC,
 }
 
-#[derive(Default)]
-struct VMState {
-    stack: Stack,
-    callframes: CallStack,
+impl Default for VM {
+    fn default() -> Self {
+        Self {
+            debug: false,
+            output: Box::new(std::io::stdout()),
+            globals: FnvHashMap::default(),
+            gc: Default::default(),
+        }
+        .with_native("clock", 0, |_args| {
+            Ok(Value::Number(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_err(|_| errors::runtime(
+                        Loc::Native,
+                        "Failed to get current system time because the system time is currently set to a time earlier than 1970-01-01T00:00:00Z.",
+                        "Make sure that you have set your system clock correctly."))?
+                    .as_secs() as f64,
+            ))
+        })
+        .with_native(
+            "assert",
+            2,
+            |args| {
+                if !args[0].is_truthy() {
+                    return Err(errors::user(
+                        format!("Assertion failed: {}", args[1])));
+                }
 
-    open_upvalues: LinkedList<Alloc<Upvalue>>,
+                Ok(Value::Nil)
+            })
+    }
 }
 
-macro_rules! op_binary {
-    ($self:ident ($left:ident, $right:ident), * : $op:tt => $res:ident) => {
-        {
-            let $right = $self.stack.pop()?;
-            let $left = $self.stack.pop()?;
-
-            #[allow(unused_parens)]
-            let result = $op;
-            $self.stack.push(Value::$res(result))?
-        }
-    };
-
-    ($self:ident ($left:ident, $right:ident), $($src:ident : $op:tt => $res:ident),+) => {
-        {
-            let right = $self.stack.pop()?;
-            let left = $self.stack.pop()?;
-
-            #[allow(unused_parens)]
-            match (left, right) {
-                $(
-                    (Value::$src($left), Value::$src($right)) => {
-                        let result = $op;
-                        $self.stack.push(Value::$res(result))?
-                    }
-                )+
-                (left, right) => return Err(errors::runtime_stacktrace(
-                    format!("Operands must be numbers, but got {} and {}.", left, right),
-                    format!("Make sure that you are passing numbers to the {} operator(s).", stringify!($($op),+)),
-                    $self.callframes.stacktrace(),
-                ))
-            }
-        }
-    };
-}
 
 impl VM {
     pub fn run_function(mut self, func: compiler::Function) -> Result<(), LoxError> {
@@ -162,37 +155,47 @@ impl Debug for VM {
     }
 }
 
-impl Default for VM {
-    fn default() -> Self {
-        Self {
-            debug: false,
-            output: Box::new(std::io::stdout()),
-            globals: ahash::AHashMap::new(),
-            gc: Default::default(),
-        }
-        .with_native("clock", 0, |_args| {
-            Ok(Value::Number(
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .map_err(|_| errors::runtime(
-                        Loc::Native,
-                        "Failed to get current system time because the system time is currently set to a time earlier than 1970-01-01T00:00:00Z.",
-                        "Make sure that you have set your system clock correctly."))?
-                    .as_secs() as f64,
-            ))
-        })
-        .with_native(
-            "assert",
-            2,
-            |args| {
-                if !args[0].is_truthy() {
-                    return Err(errors::user(
-                        format!("Assertion failed: {}", args[1])));
-                }
+#[derive(Default)]
+struct VMState {
+    stack: Stack,
+    callframes: CallStack,
 
-                Ok(Value::Nil)
-            })
-    }
+    open_upvalues: LinkedList<Alloc<Upvalue>>,
+}
+
+macro_rules! op_binary {
+    ($self:ident ($left:ident, $right:ident), * : $op:tt => $res:ident) => {
+        {
+            let $right = $self.stack.pop()?;
+            let $left = $self.stack.pop()?;
+
+            #[allow(unused_parens)]
+            let result = $op;
+            $self.stack.push(Value::$res(result))?
+        }
+    };
+
+    ($self:ident ($left:ident, $right:ident), $($src:ident : $op:tt => $res:ident),+) => {
+        {
+            let right = $self.stack.pop()?;
+            let left = $self.stack.pop()?;
+
+            #[allow(unused_parens)]
+            match (left, right) {
+                $(
+                    (Value::$src($left), Value::$src($right)) => {
+                        let result = $op;
+                        $self.stack.push(Value::$res(result))?
+                    }
+                )+
+                (left, right) => return Err(errors::runtime_stacktrace(
+                    format!("Operands must be numbers, but got {} and {}.", left, right),
+                    format!("Make sure that you are passing numbers to the {} operator(s).", stringify!($($op),+)),
+                    $self.callframes.stacktrace(),
+                ))
+            }
+        }
+    };
 }
 
 impl VMState {

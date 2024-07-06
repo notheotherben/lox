@@ -2,23 +2,23 @@ use std::mem::{size_of, size_of_val};
 use std::rc::Rc;
 use std::fmt::Display;
 
-use ahash::AHashMap;
+use fnv::FnvHashMap;
 
 use super::{Alloc, Collectible, Function, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     pub name: Rc<String>,
-    pub statics: AHashMap<String, Alloc<Function>>,
-    pub methods: AHashMap<String, Alloc<Function>>,
+    pub statics: FnvHashMap<String, Alloc<Function>>,
+    pub methods: FnvHashMap<String, Alloc<Function>>,
 }
 
 impl Class {
     pub fn new<S: Into<String>>(name: S) -> Self {
         Self {
             name: Rc::new(name.into()),
-            methods: AHashMap::new(),
-            statics: AHashMap::new(),
+            methods: FnvHashMap::default(),
+            statics: FnvHashMap::default(),
         }
     }
 
@@ -67,14 +67,14 @@ impl Display for Class {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     pub class: Alloc<Class>,
-    pub fields: AHashMap<String, Alloc<Value>>,
+    pub fields: FnvHashMap<String, Alloc<Value>>,
 }
 
 impl Instance {
     pub fn new(class: Alloc<Class>) -> Self {
         Self {
             class,
-            fields: AHashMap::new(),
+            fields: FnvHashMap::default(),
         }
     }
 }

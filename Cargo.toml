@@ -17,4 +17,4 @@ inherits = "release"
 debug = true
 
 [dependencies]
-ahash = "0.8.11"
+fnv = "1.0.7"
