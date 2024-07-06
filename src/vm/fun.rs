@@ -55,8 +55,11 @@ impl Function {
 impl Collectible for Function {
     fn gc(&self) {
         match self {
-            Function::Native { .. } => {},
-            Function::Closure { upvalues, .. } => {
+            Function::Native { name, .. } => {
+                name.gc();
+            },
+            Function::Closure { name, upvalues, .. } => {
+                name.gc();
                 for upvalue in upvalues.iter() {
                     upvalue.gc();
                 }

@@ -132,6 +132,7 @@ impl Debug for Frame {
 
 impl Collectible for Frame {
     fn gc(&self) {
+        self.name.gc();
         for upvalue in self.upvalues.iter() {
             upvalue.gc();
         }

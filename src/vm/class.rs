@@ -1,5 +1,4 @@
 use std::mem::{size_of, size_of_val};
-use std::rc::Rc;
 use std::fmt::Display;
 
 use fnv::FnvHashMap;
@@ -8,15 +7,15 @@ use super::{Alloc, Collectible, Function, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
-    pub name: Rc<String>,
+    pub name: Alloc<String>,
     pub statics: FnvHashMap<String, Alloc<Function>>,
     pub methods: FnvHashMap<String, Alloc<Function>>,
 }
 
 impl Class {
-    pub fn new<S: Into<String>>(name: S) -> Self {
+    pub fn new(name: Alloc<String>) -> Self {
         Self {
-            name: Rc::new(name.into()),
+            name,
             methods: FnvHashMap::default(),
             statics: FnvHashMap::default(),
         }
@@ -35,6 +34,8 @@ impl Class {
 
 impl Collectible for Class {
     fn gc(&self) {
+        self.name.gc();
+        
         for fun in self.methods.values() {
             fun.gc();
         }

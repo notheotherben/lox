@@ -362,6 +362,7 @@ impl VMState {
 
 impl Collectible for VMState {
     fn gc(&self) {
+        self.stack.gc();
         self.callframes.gc();
 
         for upvalue in self.open_upvalues.iter() {
@@ -817,7 +818,7 @@ impl OpRunner<&mut VMState, ()> for VM {
     }
 
     fn visit_class(&mut self, state: &mut VMState, name: usize) -> Result<(), LoxError> {
-        let name = state.callframes.active()?.constant(name)?.as_string()?.clone();
+        let name = self.gc.intern(state.callframes.active()?.constant(name)?.as_string()?);
         let class = self.gc.alloc(Class::new(name));
         state.stack.push(Value::Class(class))?;
         self.collect(state);

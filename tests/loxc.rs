@@ -133,5 +133,5 @@ mod lang {
 
 #[test]
 fn debug_test() {
-    run_file("tests/lang/super/call_same_method.lox").expect("no errors");
+    run_file("tests/lang/field/get_and_set_method.lox").expect("no errors");
 }

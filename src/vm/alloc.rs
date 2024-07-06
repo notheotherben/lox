@@ -131,10 +131,9 @@ impl<T: Collectible> Collectible for Alloc<T> {
             if self.0.as_ref().marked {
                 return;
             }
-
-            self.as_ref().gc();
-
+            
             (*self.0.as_ptr()).marked = true;
+            self.as_ref().gc();
         }
     }
 
